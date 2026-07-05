@@ -1,0 +1,193 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+export interface Gemstone {
+  id: string;
+  reference: string;
+  type: string;
+  weight: number; // in carats (cts)
+  cut: string; // Tail (e.g., Brillant, Coussin, Émeraude, Ovale)
+  color: string; // Couleur (e.g., D-Z ou saturation)
+  clarity: string; // Pureté (e.g., IF, VVS1, VS2, SI1, AAA)
+  dimensions: {
+    length: number;
+    width: number;
+    depth: number;
+  };
+  refractiveIndex: string; // Indice de réfraction (e.g. 1.762 - 1.770)
+  specificGravity: number; // Densité (e.g. 4.00)
+  treatment: string; // Traitement (e.g., Aucun, Chauffé, Huilé, Diffusion)
+  origin: string; // Origine géographique
+  certificate: {
+    authority: string; // GIA, IGI, HRD, SSEF, Custom, Sans
+    number: string;
+  };
+  costPrice: number; // Prix d'achat (€)
+  sellingPrice: number; // Prix de vente estimé (€)
+  status: 'Disponible' | 'Vendu' | 'Réservé' | 'Confié';
+  dealer: string; // Fournisseur / Négociant
+  dateAdded: string; // Date d'entrée
+  description: string;
+  inclusions: string[];
+  image?: string; // photo data-url or path
+  recuttings?: RecuttingRecord[]; // list of recutting procedures / history
+  sourcePurchaseId?: string; // traçabilité : achat d'origine (entrée directe en stock)
+  sourceArticleId?: string; // traçabilité : ligne d'article d'origine
+  provenance?: string; // 'Achat' (auto), 'Stock initial', 'Transformation d'un lot', 'Autre'
+}
+
+export interface RecuttingRecord {
+  id: string;
+  date: string;
+  lapidaryName: string; // Artisan lapidaire
+  initialWeight: number; // en carats avant
+  finalWeight: number; // en carats après
+  lossWeight: number; // perte en carats
+  lossPercentage: number; // % de perte
+  initialDimensions: { length: number; width: number; depth: number };
+  finalDimensions: { length: number; width: number; depth: number };
+  initialCut: string;
+  finalCut: string;
+  initialClarity: string;
+  finalClarity: string;
+  laborCost: number; // Coût main d'œuvre de la retaille (€)
+  observations: string; // Notes techniques / inclusions résiduelles
+}
+
+export interface RefMineral {
+  name: string;
+  chemicalFormula: string;
+  refractiveIndexMin: number;
+  refractiveIndexMax: number;
+  specificGravityMin: number;
+  specificGravityMax: number;
+  hardness: string; // Échelle de Mohs (e.g. "9")
+  crystalSystem: string; // Système cristallin (e.g. "Trigonal")
+  colors: string[];
+  lucideIcon?: string;
+  description: string;
+  diagnosticInclusions: string[];
+}
+
+export interface PurchaseArticle {
+  id: string;
+  name: string; // e.g. "Lot de brute spinelles rouges"
+  gemstoneType: string; // Saphir, Rubis, Spinelle, Tourmaline, etc.
+  weight: number; // total weight in ct
+  caratPrice: number; // buy price per carat in €
+  totalPrice: number; // total cost in €
+  notes?: string;
+  entryMode?: 'stock' | 'tri'; // 'stock' = pierre unique entrée directement à l'inventaire ; 'tri' (défaut) = colis à trier en lots
+}
+
+export interface Purchase {
+  id: string;
+  reference: string; // e.g. "ACH-2026-001"
+  supplier: string;
+  date: string;
+  status: 'Incomplet' | 'Trié' | 'En cours';
+  totalCost: number;
+  articles: PurchaseArticle[];
+  notes?: string;
+}
+
+export interface Lot {
+  id: string;
+  reference: string; // e.g. "LOT-2026-A-01" (Lot de tri)
+  purchaseId: string;
+  purchaseArticleId: string; // source article
+  gemstoneType: string;
+  weight: number; // weight in carat
+  quantity?: number; // approximate number of stones
+  averageSize?: string; // e.g. "2.2 mm"
+  averageColor?: string; // e.g. "Rouge intense"
+  averageClarity?: string; // e.g. "VS"
+  cutType?: string; // Brillant Rond, Coussin, Brut...
+  destination: string; // e.g. "Lot de tri #1"
+  dateCreated: string;
+  notes?: string;
+  image?: string; // photo data-url or path
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  country?: string;
+  vatNumber?: string;
+  notes?: string;
+  dateAdded: string;
+}
+
+export interface PriceGuideEntry {
+  id: string;
+  gemstoneType: string; // Saphir, Rubis, Émeraude...
+  tierName: string; // Palier de qualité défini par l'utilisateur (ex: "Ceylan non chauffé - fine")
+  minPricePerCarat: number; // fourchette basse €/ct
+  maxPricePerCarat: number; // fourchette haute €/ct
+  notes?: string;
+  sortOrder?: number;
+}
+
+export interface CompanySettings {
+  name: string;
+  address: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  phone: string;
+  email: string;
+  vatNumber: string;
+  siret: string;
+  website: string;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  contactName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  postalCode?: string;
+  country?: string;
+  vatNumber?: string;
+  notes?: string;
+  dateAdded: string;
+}
+
+export interface InvoiceItem {
+  id: string;
+  gemstoneId?: string;
+  description: string;
+  weight?: number;
+  quantity: number;
+  unitPrice: number;
+  vatRate: number; // percentage (e.g. 20)
+  totalAmount: number; // excl tax
+}
+
+export interface SalesInvoice {
+  id: string;
+  invoiceNumber: string;
+  date: string;
+  dueDate: string;
+  clientId: string;
+  clientName: string;
+  items: InvoiceItem[];
+  discount: number;
+  totalExclTax: number;
+  vatAmount: number;
+  totalInclTax: number;
+  status: 'Brouillon' | 'Payée' | 'En attente' | 'Annulée';
+  paymentMethod: 'Virement' | 'Carte' | 'Espèces' | 'Autre';
+  notes?: string;
+}
+

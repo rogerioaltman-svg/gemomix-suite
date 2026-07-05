@@ -1,0 +1,531 @@
+@import "tailwindcss";
+
+/* ☀️ Light theme override selectors */
+.light-theme {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+/* Base body background override when light theme is active */
+body:has(.light-theme) {
+  background-color: #f8fafc !important;
+}
+
+/* Background overrides using wildcard substring matching */
+.light-theme [class*="bg-[#0a0c12]"],
+.light-theme .bg-\[\#0a0c12\] {
+  background-color: #f8fafc !important;
+}
+
+.light-theme [class*="bg-[#101421]"],
+.light-theme .bg-\[\#101421\] {
+  background-color: #ffffff !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+.light-theme [class*="bg-[#121620]"],
+.light-theme [class*="bg-[#121622]"],
+.light-theme .bg-\[\#121620\],
+.light-theme .bg-\[\#121622\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+}
+
+.light-theme [class*="bg-[#151a27]"],
+.light-theme [class*="bg-[#141a29]"],
+.light-theme .bg-\[\#151a27\],
+.light-theme .bg-\[\#141a29\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme [class*="bg-[#171d2b]"],
+.light-theme [class*="bg-[#17202f]"],
+.light-theme [class*="bg-[#181f2f]"],
+.light-theme [class*="bg-[#181f2d]"],
+.light-theme [class*="bg-[#121824]"],
+.light-theme .bg-\[\#121824\],
+.light-theme .bg-\[\#171d2b\] {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme [class*="bg-[#111520]"],
+.light-theme .bg-\[\#111520\] {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme [class*="bg-[#171e2c]"],
+.light-theme [class*="bg-[#0e1117]"],
+.light-theme .bg-\[\#171e2c\],
+.light-theme .bg-\[\#0e1117\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+.light-theme [class*="bg-[#1b2333]"],
+.light-theme [class*="bg-[#1c2333]"],
+.light-theme .bg-\[\#1b2333\],
+.light-theme .bg-\[\#1c2333\] {
+  background-color: #edf2f7 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Translucent layer overrides */
+.light-theme .bg-black\/30 {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+.light-theme .bg-black\/60 {
+  background-color: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(4px);
+}
+.light-theme .bg-black\/80 {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(4px);
+}
+.light-theme .bg-black {
+  background-color: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+/* Global Border color replacements */
+.light-theme [class*="border-[#1f283d]"],
+.light-theme [class*="border-[#212a3d]"],
+.light-theme [class*="border-[#232f46]"],
+.light-theme [class*="border-[#232f48]"],
+.light-theme [class*="border-[#27354d]"],
+.light-theme .border-gray-800 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Text color replacements */
+.light-theme .text-white,
+.light-theme [class*="text-gray-100"] {
+  color: #0f172a !important;
+}
+.light-theme [class*="text-gray-200"] {
+  color: #1e293b !important;
+}
+.light-theme [class*="text-gray-300"] {
+  color: #334155 !important;
+}
+.light-theme [class*="text-gray-400"] {
+  color: #475569 !important;
+}
+.light-theme [class*="text-gray-500"] {
+  color: #64748b !important;
+}
+
+.light-theme .text-red-400 {
+  color: #dc2626 !important;
+}
+
+.light-theme button:hover[class*="hover:text-red-"],
+.light-theme [class*="hover:text-red-"]:hover,
+.light-theme .hover\:text-red-400:hover,
+.light-theme .hover\:text-red-500:hover {
+  color: #dc2626 !important;
+}
+
+.light-theme button:hover[class*="hover:text-emerald-"],
+.light-theme [class*="hover:text-emerald-"]:hover,
+.light-theme .hover\:text-emerald-400:hover,
+.light-theme .hover\:text-emerald-500:hover {
+  color: #059669 !important;
+}
+
+.light-theme .hover\:text-\[\#e0b760\]:hover {
+  color: #b48e3a !important;
+}
+
+.light-theme .text-orange-400,
+.light-theme .text-amber-400 {
+  color: #d97706 !important;
+}
+
+.light-theme .text-yellow-400 {
+  color: #b45309 !important;
+}
+
+/* Specific elements like active nav buttons and inputs */
+.light-theme .border-transparent {
+  border-color: transparent !important;
+}
+
+.light-theme input,
+.light-theme select,
+.light-theme textarea {
+  color: #0f172a !important;
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+}
+
+.light-theme input::placeholder,
+.light-theme textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Let's ensure active gold borders feel readable but bright */
+.light-theme [class*="border-[#bda165]"],
+.light-theme [class*="border-[#b4985c]"] {
+  border-color: #bda165 !important;
+}
+
+/* Code block terminal styles inside Python suite should stay dark and nice */
+.light-theme pre,
+.light-theme code {
+  color: #e2e8f0;
+}
+
+/* Gray utility backgrounds → clairs en light mode (bg conservé sombre ôté) */
+.light-theme .bg-gray-950 {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+.light-theme .bg-gray-950 * { color: inherit; }
+
+.light-theme .bg-gray-900 {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+.light-theme .bg-gray-900 * { color: inherit; }
+
+.light-theme .bg-gray-900\/60 { background-color: rgba(226,232,240,0.85) !important; }
+.light-theme .bg-gray-900\/40 { background-color: rgba(241,245,249,0.9) !important; }
+.light-theme .bg-gray-900\/30 { background-color: rgba(248,250,252,0.9) !important; }
+.light-theme .bg-gray-900\/20 { background-color: rgba(248,250,252,0.7) !important; }
+
+.light-theme .bg-gray-800 {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+.light-theme .bg-gray-800 * { color: inherit; }
+
+.light-theme .bg-slate-800 {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+.light-theme .bg-slate-800 * { color: inherit; }
+
+.light-theme .bg-slate-900 {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+.light-theme .bg-slate-900 * { color: inherit; }
+
+/* Yellow / gold text → dark amber lisible sur fond clair */
+.light-theme .text-yellow-500 { color: #92400e !important; }
+.light-theme .text-\[\#eedfa7\] { color: #92400e !important; }
+.light-theme .text-\[\#e0b760\] { color: #7c5a1a !important; }
+.light-theme .text-\[\#bda165\] { color: #7c5a1a !important; }
+
+/* Emerald / green */
+.light-theme .text-emerald-400 { color: #047857 !important; }
+.light-theme .text-emerald-500 { color: #047857 !important; }
+.light-theme .text-green-400   { color: #15803d !important; }
+.light-theme .text-green-500   { color: #15803d !important; }
+
+/* Sky / cyan / teal */
+.light-theme .text-sky-400  { color: #0369a1 !important; }
+.light-theme .text-sky-300  { color: #0369a1 !important; }
+.light-theme .text-cyan-400 { color: #0e7490 !important; }
+.light-theme .text-teal-400 { color: #0f766e !important; }
+
+/* Action buttons (fond coloré) → texte blanc conservé */
+.light-theme .bg-emerald-500,
+.light-theme .bg-emerald-500 *,
+.light-theme .bg-emerald-600,
+.light-theme .bg-emerald-600 *,
+.light-theme .bg-amber-500,
+.light-theme .bg-amber-500 *,
+.light-theme .bg-amber-600,
+.light-theme .bg-amber-600 *,
+.light-theme .bg-red-500,
+.light-theme .bg-red-500 *,
+.light-theme .bg-red-600,
+.light-theme .bg-red-600 *,
+.light-theme .bg-sky-500,
+.light-theme .bg-sky-500 *,
+.light-theme .bg-sky-600,
+.light-theme .bg-sky-600 *,
+.light-theme .bg-blue-500,
+.light-theme .bg-blue-500 *,
+.light-theme .bg-blue-600,
+.light-theme .bg-blue-600 *,
+.light-theme .bg-\[\#1f283b\],
+.light-theme .bg-\[\#1f283b\] *,
+.light-theme .bg-\[\#2b3952\],
+.light-theme .bg-\[\#2b3952\] *,
+.light-theme .bg-\[\#1e2739\],
+.light-theme .bg-\[\#1e2739\] *,
+.light-theme .bg-\[\#28354c\],
+.light-theme .bg-\[\#28354c\] *,
+.light-theme .bg-\[\#161c28\],
+.light-theme .bg-\[\#161c28\] * {
+  color: #ffffff !important;
+}
+
+/* Bouton "Saisir un Achat" — dark green hex → emerald lisible */
+.light-theme .bg-\[\#12231c\] {
+  background-color: #059669 !important;
+  color: #ffffff !important;
+  border-color: #047857 !important;
+}
+.light-theme .bg-\[\#12231c\] * { color: #ffffff !important; }
+.light-theme .hover\:bg-\[\#183329\]:hover {
+  background-color: #047857 !important;
+  color: #ffffff !important;
+}
+
+/* Ensure hovered navigation elements turn white on hover in light mode */
+.light-theme nav button:hover,
+.light-theme nav button:hover *,
+.light-theme .hover\:bg-\[\#161d2d\]:hover,
+.light-theme .hover\:bg-\[\#161d2d\]:hover * {
+  color: #ffffff !important;
+}
+
+/* Specific styling for Theme Toggle buttons in Light Mode to ensure perfect readability and hover effects */
+.light-theme #theme-toggle,
+.light-theme #theme-toggle-mobile {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme #theme-toggle span,
+.light-theme #theme-toggle-mobile span {
+  color: #334155 !important;
+}
+
+.light-theme #theme-toggle:hover,
+.light-theme #theme-toggle-mobile:hover {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+.light-theme #theme-toggle:hover span,
+.light-theme #theme-toggle-mobile:hover span {
+  color: #0f172a !important;
+}
+
+/* === Styling for "Tiers & CSV" Toggles, Inputs, and Table Headers in Light Mode === */
+
+/* Container and table headers using the very dark bg-[#0b... */
+.light-theme [class*="bg-[#0b0e17]"],
+.light-theme .bg-\[\#0b0e17\],
+.light-theme [class*="bg-[#0b0e16]"],
+.light-theme .bg-\[\#0b0e16\] {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Light Theme: Switch toggler panel border */
+.light-theme [class*="border-[#1d2739]/80"],
+.light-theme .border-\[\#1d2739\]\/80 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Inactive subtab buttons */
+.light-theme #subtab-clients:not(.bg-\[\#1e2638\]),
+.light-theme #subtab-suppliers:not(.bg-\[\#1e2638\]) {
+  color: #475569 !important;
+  background-color: transparent !important;
+}
+
+.light-theme #subtab-clients:not(.bg-\[\#1e2638\]) *,
+.light-theme #subtab-suppliers:not(.bg-\[\#1e2638\]) * {
+  color: inherit !important;
+}
+
+/* Hovering inactive subtab buttons */
+.light-theme #subtab-clients:not(.bg-\[\#1e2638\]):hover,
+.light-theme #subtab-suppliers:not(.bg-\[\#1e2638\]):hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Active subtab buttons */
+.light-theme #subtab-clients.bg-\[\#1e2638\],
+.light-theme #subtab-suppliers.bg-\[\#1e2638\],
+.light-theme [class*="bg-[#1e2638]"],
+.light-theme .bg-\[\#1e2638\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.08) !important;
+}
+
+.light-theme #subtab-clients.bg-\[\#1e2638\] *,
+.light-theme #subtab-suppliers.bg-\[\#1e2638\] * {
+  color: #0f172a !important;
+}
+
+/* Search Input field styling search list */
+.light-theme [class*="bg-[#0a0d15]"],
+.light-theme .bg-\[\#0a0d15\] {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+.light-theme [class*="border-[#1f293d]"],
+.light-theme .border-\[\#1f293d\] {
+  border-color: #cbd5e1 !important;
+}
+
+/* Solid replacement for grid tables borders and divider lines */
+.light-theme [class*="border-[#1a2336]"],
+.light-theme .border-\[\#1a2336\] {
+  border-color: #cbd5e1 !important;
+}
+
+.light-theme [class*="border-[#1c273a]"],
+.light-theme .border-\[\#1c273a\] {
+  border-color: #cbd5e1 !important;
+}
+
+.light-theme [class*="divide-[#182235]"],
+.light-theme .divide-\[\#182235\] {
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme [class*="divide-[#182235]"] > :not([hidden]) ~ :not([hidden]),
+.light-theme .divide-\[\#182235\] > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0 !important;
+}
+
+/* Table body row background hover rules */
+.light-theme tr.hover\:bg-\[\#151d2e\]\/40:hover,
+.light-theme .hover\:bg-\[\#151d2e\]\/40:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* Recutting sections and logs */
+.light-theme [class*="bg-[#111624]"],
+.light-theme .bg-\[\#111624\],
+.light-theme [class*="bg-[#1a253a]"],
+.light-theme .bg-\[\#1a253a\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme [class*="bg-[#10141f]"],
+.light-theme .bg-\[\#10141f\] {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme .bg-black\/40 {
+  background-color: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+
+.light-theme .bg-gray-900\/10 {
+  background-color: #f1f5f9 !important;
+}
+
+.light-theme .border-gray-800\/40,
+.light-theme .border-gray-800\/30 {
+  border-color: #e2e8f0 !important;
+}
+
+
+
+
+
+/* ── Hex dark navies non couverts → fond clair en light mode ─────── */
+.light-theme [class*="bg-[#161d2d]"],
+.light-theme .bg-\[\#161d2d\],
+.light-theme [class*="bg-[#151d2e]"],
+.light-theme .bg-\[\#151d2e\],
+.light-theme [class*="bg-[#202c44]"],
+.light-theme .bg-\[\#202c44\],
+.light-theme [class*="bg-[#1e283b]"],
+.light-theme .bg-\[\#1e283b\],
+.light-theme [class*="bg-[#141924]"],
+.light-theme .bg-\[\#141924\],
+.light-theme [class*="bg-[#161c28]"],
+.light-theme .bg-\[\#161c28\] {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+.light-theme [class*="bg-[#161d2d]"] *,
+.light-theme .bg-\[\#161d2d\] *,
+.light-theme [class*="bg-[#151d2e]"] *,
+.light-theme .bg-\[\#151d2e\] *,
+.light-theme [class*="bg-[#202c44]"] *,
+.light-theme .bg-\[\#202c44\] *,
+.light-theme [class*="bg-[#1e283b]"] *,
+.light-theme .bg-\[\#1e283b\] *,
+.light-theme [class*="bg-[#141924]"] *,
+.light-theme .bg-\[\#141924\] *,
+.light-theme [class*="bg-[#161c28]"] *,
+.light-theme .bg-\[\#161c28\] * {
+  color: inherit;
+}
+
+/* hover:bg-gray-800 et hover:bg-gray-900 → hover gris clair */
+.light-theme .hover\:bg-gray-800:hover {
+  background-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+.light-theme .hover\:bg-gray-900:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* bg-[#161d2d]/x et variantes translucides */
+.light-theme [class*="bg-[#161d2d]/"],
+.light-theme [class*="bg-[#151d2e]/"],
+.light-theme [class*="bg-[#1c1218]"],
+.light-theme .bg-\[\#1c1218\] {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* ── Row hover inventaire Dashboard (hover:bg-[#18202f]/60) ─────── */
+.light-theme .hover\:bg-\[\#18202f\]\/60:hover {
+  background-color: rgba(226, 232, 240, 0.5) !important;
+}
+
+/* Autres hover hex foncés sur lignes de tableau */
+.light-theme .hover\:bg-\[\#161d2d\]:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+.light-theme .hover\:bg-\[\#1f283d\]:hover,
+.light-theme .hover\:bg-\[\#2b3952\]:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+.light-theme .hover\:bg-\[\#18202f\]:hover,
+.light-theme .hover\:bg-\[\#18202f\]\/60:hover,
+.light-theme .hover\:bg-\[\#18202f\]\/40:hover {
+  background-color: rgba(226, 232, 240, 0.5) !important;
+}
+
+/* SalesManager row hover */
+.light-theme .hover\:bg-gray-900\/40:hover {
+  background-color: rgba(226, 232, 240, 0.4) !important;
+}
+
+/* IdentificationLab — boîte citation italic */
+.light-theme [class*="bg-[#0f121a]"],
+.light-theme .bg-\[\#0f121a\] {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+  border-color: #cbd5e1 !important;
+}
+.light-theme [class*="bg-[#0f121a]"] *,
+.light-theme .bg-\[\#0f121a\] * {
+  color: inherit;
+}
