@@ -12,14 +12,18 @@ import dotenv from 'dotenv';
 import {
   getDb, DB_FILE_PATH,
   getAllGemstones, saveGemstone, deleteGemstone,
-  getAllPurchases, savePurchase, deletePurchase, deleteLotsByPurchaseId,
+  getAllPurchases, savePurchase, deletePurchase, deleteLotsByPurchaseId, getNextPurchaseReference, getNextSubReference,
   getAllLots, saveLot, deleteLot,
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
   getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice,
   getCompanySettings, saveCompanySettings,
-  getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry
+  getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
+  getTrash, restoreTrashItem,
+  getMovementsForEntity,
+  getAllBijoux, saveBijou, deleteBijou, decomposeBijou
 } from './src/server_db';
+import { TrashEntityType } from './src/types';
 
 dotenv.config();
 
@@ -103,6 +107,28 @@ app.get('/api/purchases', async (req, res) => {
 });
 
 // Create/Update a purchase
+// Module 6 : numéro de la prochaine facture d'achat (aperçu avant enregistrement)
+app.get('/api/purchases/next-reference', async (req, res) => {
+  try {
+    const reference = await getNextPurchaseReference();
+    res.json({ reference });
+  } catch (error: any) {
+    console.error("Error generating next purchase reference:", error);
+    res.status(500).json({ error: "Erreur lors de la génération du numéro de facture." });
+  }
+});
+
+// Module 7 : prochaine référence lot/pierre (n° facture/suffixe) sous un achat donné
+app.get('/api/purchases/:id/next-sub-reference', async (req, res) => {
+  try {
+    const reference = await getNextSubReference(req.params.id);
+    res.json({ reference });
+  } catch (error: any) {
+    console.error("Error generating next sub-reference:", error);
+    res.status(500).json({ error: "Erreur lors de la génération de la référence." });
+  }
+});
+
 app.post('/api/purchases', async (req, res) => {
   try {
     const p = req.body;
@@ -300,6 +326,87 @@ app.delete('/api/price-guide/:id', async (req, res) => {
   } catch (error: any) {
     console.error("Error deleting price guide entry:", error);
     res.status(500).json({ error: "Erreur de suppression du palier." });
+  }
+});
+
+// --- Module 12 : Bijoux composés (monture + pierres serties) & décomposition ---
+app.get('/api/bijoux', async (req, res) => {
+  try {
+    const list = await getAllBijoux();
+    res.json(list);
+  } catch (error: any) {
+    console.error("Error fetching bijoux:", error);
+    res.status(500).json({ error: "Erreur de récupération des bijoux." });
+  }
+});
+
+app.post('/api/bijoux', async (req, res) => {
+  try {
+    const bijou = req.body;
+    if (!bijou || !bijou.id || !bijou.reference) {
+      return res.status(400).json({ error: "Format de bijou invalide." });
+    }
+    await saveBijou(bijou);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error saving bijou:", error);
+    res.status(500).json({ error: "Erreur d'enregistrement du bijou." });
+  }
+});
+
+app.delete('/api/bijoux/:id', async (req, res) => {
+  try {
+    await deleteBijou(req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error deleting bijou:", error);
+    res.status(500).json({ error: "Erreur de suppression du bijou." });
+  }
+});
+
+app.post('/api/bijoux/:id/decompose', async (req, res) => {
+  try {
+    await decomposeBijou(req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error decomposing bijou:", error);
+    res.status(400).json({ error: error.message || "Erreur lors de la décomposition du bijou." });
+  }
+});
+
+// --- Module 11 : Corbeille (suppression logique / historique immuable) ---
+app.get('/api/trash', async (req, res) => {
+  try {
+    const items = await getTrash();
+    res.json(items);
+  } catch (error: any) {
+    console.error("Error fetching trash:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération de la corbeille." });
+  }
+});
+
+app.post('/api/trash/:type/:id/restore', async (req, res) => {
+  try {
+    await restoreTrashItem(req.params.type as TrashEntityType, req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error restoring trash item:", error);
+    res.status(500).json({ error: "Erreur lors de la restauration de l'élément." });
+  }
+});
+
+// --- Module 10 : Historique des mouvements de stock (journal en lecture seule) ---
+app.get('/api/movements/:entityType/:entityId', async (req, res) => {
+  try {
+    const { entityType, entityId } = req.params;
+    if (entityType !== 'gemstone' && entityType !== 'lot') {
+      return res.status(400).json({ error: "Type d'entité invalide (attendu : gemstone ou lot)." });
+    }
+    const movements = await getMovementsForEntity(entityType, entityId);
+    res.json(movements);
+  } catch (error: any) {
+    console.error("Error fetching movements:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération de l'historique des mouvements." });
   }
 });
 

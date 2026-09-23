@@ -7,7 +7,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SEED_GEMSTONES, SEED_PURCHASES, SEED_LOTS } from './data';
-import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry } from './types';
+import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou } from './types';
 
 export const DB_FILE_PATH = path.join(process.cwd(), 'gemophy.db');
 // Ancienne base JSON (générée par la version AI Studio) : importée puis archivée au premier lancement
@@ -138,6 +138,19 @@ function getConnection(): Database.Database {
       phone TEXT, email TEXT, vat_number TEXT, siret TEXT, website TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS stock_movements (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      entity_reference TEXT NOT NULL,
+      weight REAL,
+      amount REAL,
+      notes TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_movements_entity ON stock_movements(entity_type, entity_id);
+
     CREATE TABLE IF NOT EXISTS price_guide (
       id TEXT PRIMARY KEY,
       gemstone_type TEXT NOT NULL,
@@ -147,10 +160,25 @@ function getConnection(): Database.Database {
       notes TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS bijoux (
+      id TEXT PRIMARY KEY,
+      reference TEXT NOT NULL,
+      description TEXT,
+      metal TEXT,
+      metal_weight REAL NOT NULL DEFAULT 0,
+      gemstone_ids TEXT NOT NULL DEFAULT '[]',
+      cost_price REAL NOT NULL DEFAULT 0,
+      selling_price REAL NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'Disponible',
+      date_added TEXT NOT NULL,
+      notes TEXT
+    );
   `);
 
   ensureForeignKeys(db);
   ensureSourceColumns(db);
+  ensureDeletedAtColumns(db);
   bootstrapIfEmpty(db);
 
   // Migration terminologie : 'Consignation' -> 'Confié' (terme du négoce). Idempotent.
@@ -174,6 +202,23 @@ function ensureSourceColumns(conn: Database.Database) {
     conn.exec(`ALTER TABLE gemstones ADD COLUMN provenance TEXT;`);
     // Les pierres issues d'un achat sont identifiables par leur traçabilité
     conn.exec(`UPDATE gemstones SET provenance = 'Achat' WHERE source_purchase_id IS NOT NULL AND provenance IS NULL;`);
+  }
+}
+
+// Module 11 : suppression logique / historique immuable. Ajoute une colonne
+// deleted_at (date d'archivage, NULL = actif) sur les 7 entités concernées.
+// Les anciennes contraintes ON DELETE CASCADE / SET NULL ne se déclenchent plus
+// jamais (on ne fait plus de vraie suppression SQL) : le comportement équivalent
+// est désormais reproduit manuellement dans deletePurchase (cascade vers lots).
+const TABLES_WITH_SOFT_DELETE = ['gemstones', 'purchases', 'lots', 'suppliers', 'clients', 'sales_invoices', 'price_guide', 'bijoux'];
+
+function ensureDeletedAtColumns(conn: Database.Database) {
+  for (const table of TABLES_WITH_SOFT_DELETE) {
+    const cols = (conn.pragma(`table_info(${table})`) as any[]).map(c => c.name);
+    if (!cols.includes('deleted_at')) {
+      console.log(`[SQLite] Migration : ajout de l'archivage (deleted_at) sur ${table}...`);
+      conn.exec(`ALTER TABLE ${table} ADD COLUMN deleted_at TEXT;`);
+    }
   }
 }
 
@@ -642,6 +687,59 @@ function upsertCompanySettings(conn: Database.Database, s: CompanySettings) {
 }
 
 /* ==========================================================================
+   Module 10 : Historique des mouvements de stock (journal immuable)
+   ========================================================================== */
+
+function logMovement(
+  conn: Database.Database,
+  type: StockMovementType,
+  entityType: 'gemstone' | 'lot',
+  entityId: string,
+  entityReference: string,
+  weight?: number,
+  amount?: number,
+  notes?: string
+) {
+  conn.prepare(`
+    INSERT INTO stock_movements (id, type, entity_type, entity_id, entity_reference, weight, amount, notes, created_at)
+    VALUES (@id, @type, @entityType, @entityId, @entityReference, @weight, @amount, @notes, @createdAt)
+  `).run({
+    id: `mvt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    entityType,
+    entityId,
+    entityReference,
+    weight: weight ?? null,
+    amount: amount ?? null,
+    notes: notes ?? null,
+    createdAt: new Date().toISOString()
+  });
+}
+
+function rowToMovement(r: any): StockMovement {
+  return {
+    id: r.id,
+    type: r.type,
+    entityType: r.entity_type,
+    entityId: r.entity_id,
+    entityReference: r.entity_reference,
+    weight: r.weight ?? undefined,
+    amount: r.amount ?? undefined,
+    notes: r.notes ?? undefined,
+    createdAt: r.created_at
+  };
+}
+
+// Consultable par pierre ou par lot, comme demandé — jamais d'écriture exposée
+// ici (ni update ni delete) : le journal est strictement append-only.
+export async function getMovementsForEntity(entityType: 'gemstone' | 'lot', entityId: string): Promise<StockMovement[]> {
+  return getConnection()
+    .prepare('SELECT * FROM stock_movements WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC')
+    .all(entityType, entityId)
+    .map(rowToMovement);
+}
+
+/* ==========================================================================
    API publique (mêmes signatures que l'ancienne couche JSON)
    ========================================================================== */
 
@@ -652,22 +750,62 @@ export async function getDb(): Promise<{ status: string }> {
 
 export async function getAllGemstones(): Promise<Gemstone[]> {
   return getConnection()
-    .prepare('SELECT * FROM gemstones ORDER BY date_added DESC')
+    .prepare('SELECT * FROM gemstones WHERE deleted_at IS NULL ORDER BY date_added DESC')
     .all()
     .map(rowToGemstone);
 }
 
 export async function saveGemstone(gem: Gemstone): Promise<void> {
-  upsertGemstone(getConnection(), gem);
+  const conn = getConnection();
+  // Module 7 : la référence d'une pierre issue d'un achat (n° facture/suffixe)
+  // ne doit jamais être modifiée après coup, même via la fiche d'inventaire —
+  // sans quoi la nomenclature perdrait tout son sens. Les pierres saisies hors
+  // achat (provenance manuelle) restent librement renommables.
+  const existing = conn.prepare('SELECT reference, source_purchase_id, weight, recuttings FROM gemstones WHERE id = ?').get(gem.id) as
+    { reference: string; source_purchase_id: string | null; weight: number; recuttings: string | null } | undefined;
+  const finalGem: Gemstone = (existing && existing.source_purchase_id)
+    ? { ...gem, reference: existing.reference }
+    : gem;
+  upsertGemstone(conn, finalGem);
+
+  // Module 10 : journalisation. On ne loggue jamais l'ACHAT ici — une pierre
+  // créée via un achat passe par createDirectEntryGemstones, qui journalise déjà.
+  if (!existing) {
+    if (finalGem.provenance !== 'Achat') {
+      logMovement(conn, 'AJUSTEMENT', 'gemstone', finalGem.id, finalGem.reference, finalGem.weight, undefined,
+        `Entrée manuelle en stock (${finalGem.provenance || 'provenance non précisée'})`);
+    }
+    return;
+  }
+
+  const existingRecuttingsCount = existing.recuttings ? (JSON.parse(existing.recuttings) as unknown[]).length : 0;
+  const newRecuttingsCount = finalGem.recuttings?.length ?? 0;
+
+  if (newRecuttingsCount > existingRecuttingsCount) {
+    // Un nouvel enregistrement de retaille vient d'être ajouté (RecuttingSection)
+    const latest = finalGem.recuttings![finalGem.recuttings!.length - 1];
+    const retailleLoss = Math.round(Math.abs(latest.lossWeight ?? (existing.weight - finalGem.weight)) * 1000) / 1000;
+    logMovement(conn, 'RETAILLE', 'gemstone', finalGem.id, finalGem.reference, -retailleLoss, undefined,
+      `Retaille par ${latest.lapidaryName || 'lapidaire non renseigné'} : ${existing.weight} ct → ${finalGem.weight} ct`);
+  } else if (Math.abs((finalGem.weight ?? 0) - existing.weight) > 0.001) {
+    // Poids modifié en dehors du registre de retailles : correction manuelle d'inventaire
+    const delta = Math.round((finalGem.weight - existing.weight) * 1000) / 1000;
+    logMovement(conn, 'AJUSTEMENT', 'gemstone', finalGem.id, finalGem.reference, delta, undefined,
+      `Correction manuelle du poids : ${existing.weight} ct → ${finalGem.weight} ct`);
+  }
 }
 
 export async function deleteGemstone(id: string): Promise<void> {
-  getConnection().prepare('DELETE FROM gemstones WHERE id = ?').run(id);
+  getConnection().prepare('UPDATE gemstones SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+}
+
+export async function restoreGemstone(id: string): Promise<void> {
+  getConnection().prepare('UPDATE gemstones SET deleted_at = NULL WHERE id = ?').run(id);
 }
 
 export async function getAllPurchases(): Promise<Purchase[]> {
   return getConnection()
-    .prepare('SELECT * FROM purchases ORDER BY date DESC')
+    .prepare('SELECT * FROM purchases WHERE deleted_at IS NULL ORDER BY date DESC')
     .all()
     .map(rowToPurchase);
 }
@@ -675,10 +813,41 @@ export async function getAllPurchases(): Promise<Purchase[]> {
 export async function savePurchase(p: Purchase): Promise<void> {
   const conn = getConnection();
   const run = conn.transaction(() => {
-    upsertPurchase(conn, p);
-    createDirectEntryGemstones(conn, p);
+    // Module 6 : le numéro de facture d'achat est toujours attribué par le serveur,
+    // jamais saisi librement. À la création, on génère le prochain numéro séquentiel ;
+    // à la modification, on conserve le numéro d'origine (il sert de racine à la
+    // nomenclature lot/sous-lot du Module 7 — il ne doit jamais changer après coup).
+    const existing = conn.prepare('SELECT reference FROM purchases WHERE id = ?').get(p.id) as { reference: string } | undefined;
+    const finalPurchase: Purchase = {
+      ...p,
+      reference: existing ? existing.reference : generatePurchaseReference(conn)
+    };
+    upsertPurchase(conn, finalPurchase);
+    createDirectEntryGemstones(conn, finalPurchase);
   });
   run();
+}
+
+// Génère le prochain numéro de facture d'achat séquentiel (ex: "512", "513"...).
+// Ne considère que les références purement numériques déjà en base pour calculer
+// la suite ; les anciennes références au format libre (ex: "F-2026-001") sont ignorées.
+function generatePurchaseReference(conn: Database.Database): string {
+  const rows = conn.prepare("SELECT reference FROM purchases").all() as { reference: string }[];
+  let max = 0;
+  for (const r of rows) {
+    if (/^\d+$/.test(r.reference)) {
+      const n = parseInt(r.reference, 10);
+      if (n > max) max = n;
+    }
+  }
+  const exists = conn.prepare('SELECT 1 FROM purchases WHERE reference = ?');
+  let next = max + 1;
+  while (exists.get(String(next))) next++;
+  return String(next);
+}
+
+export async function getNextPurchaseReference(): Promise<string> {
+  return generatePurchaseReference(getConnection());
 }
 
 // Pour chaque article "pierre unique -> entrée directe en stock", crée la fiche
@@ -690,9 +859,10 @@ function createDirectEntryGemstones(conn: Database.Database, p: Purchase) {
     if (art.entryMode !== 'stock') return;
     if (findBySource.get(art.id)) return;
 
+    const newRef = generateSubReference(conn, p.id);
     upsertGemstone(conn, {
       id: `gem-src-${art.id}`,
-      reference: generateStoneReference(conn, art.gemstoneType, p.date),
+      reference: newRef,
       type: art.gemstoneType,
       weight: art.weight ?? 0,
       cut: '',
@@ -715,52 +885,140 @@ function createDirectEntryGemstones(conn: Database.Database, p: Purchase) {
       sourceArticleId: art.id,
       provenance: 'Achat'
     });
+
+    logMovement(conn, 'ACHAT', 'gemstone', `gem-src-${art.id}`, newRef, art.weight, art.totalPrice, `Achat ${p.reference} — ${art.name} (${p.supplier})`);
   });
 }
 
 // Génère une référence unique du type PP-2026-EME-004 (année d'achat + variété abrégée)
-function generateStoneReference(conn: Database.Database, gemstoneType: string, dateStr?: string): string {
-  const year = (dateStr || new Date().toISOString()).slice(0, 4);
-  const code = (gemstoneType || 'GEM')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase().replace(/[^A-Z]/g, '')
-    .slice(0, 3) || 'GEM';
-  const exists = conn.prepare('SELECT 1 FROM gemstones WHERE reference = ?');
-  let n = (conn.prepare('SELECT COUNT(*) AS n FROM gemstones').get() as { n: number }).n + 1;
-  let ref: string;
-  do {
-    ref = `PP-${year}-${code}-${String(n).padStart(3, '0')}`;
-    n++;
-  } while (exists.get(ref));
-  return ref;
+// Module 7 : nomenclature unifi\u00e9e Lot/Sous-lot. Chaque pierre ou lot issu d'un
+// achat re\u00e7oit une r\u00e9f\u00e9rence "<n\u00b0 facture d'achat>/<suffixe>" (ex: "1/A", "1/B"...),
+// en remplacement des anciens sch\u00e9mas s\u00e9par\u00e9s (LOT-2026-XXX, PP-2026-XXX).
+// Le suffixe compte ensemble les lots ET les pierres en entr\u00e9e directe rattach\u00e9s
+// au m\u00eame achat, dans l'ordre o\u00f9 ils sont cr\u00e9\u00e9s.
+function numberToLetterSuffix(n: number): string {
+  let s = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+function letterSuffixToNumber(s: string): number {
+  let n = 0;
+  for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n;
+}
+
+function generateSubReference(conn: Database.Database, purchaseId: string): string {
+  const purchase = conn.prepare('SELECT reference FROM purchases WHERE id = ?').get(purchaseId) as { reference: string } | undefined;
+  // Garde-fou : ne devrait pas arriver (purchaseId toujours valide en pratique),
+  // mais \u00e9vite un plantage si jamais l'achat parent est introuvable.
+  if (!purchase) return `SANS-ACHAT-${Date.now()}`;
+
+  const root = purchase.reference;
+  const prefix = `${root}/`;
+  const lotRefs = (conn.prepare('SELECT reference FROM lots WHERE purchase_id = ?').all(purchaseId) as { reference: string }[]).map(r => r.reference);
+  const gemRefs = (conn.prepare('SELECT reference FROM gemstones WHERE source_purchase_id = ?').all(purchaseId) as { reference: string }[]).map(r => r.reference);
+
+  let max = 0;
+  for (const ref of [...lotRefs, ...gemRefs]) {
+    if (ref.startsWith(prefix)) {
+      const suffix = ref.slice(prefix.length);
+      if (/^[A-Z]+$/.test(suffix)) {
+        const n = letterSuffixToNumber(suffix);
+        if (n > max) max = n;
+      }
+    }
+  }
+  return `${prefix}${numberToLetterSuffix(max + 1)}`;
+}
+
+export async function getNextSubReference(purchaseId: string): Promise<string> {
+  return generateSubReference(getConnection(), purchaseId);
 }
 
 export async function deletePurchase(id: string): Promise<void> {
-  getConnection().prepare('DELETE FROM purchases WHERE id = ?').run(id);
+  const conn = getConnection();
+  const now = new Date().toISOString();
+  const run = conn.transaction(() => {
+    // Reproduit manuellement l'ancien ON DELETE CASCADE lots->purchases : les
+    // lots de tri n'ont pas d'existence propre hors de leur achat d'origine.
+    // Les pierres en entrée directe (source_purchase_id), elles, restent actives :
+    // ce sont des biens physiques réels, l'archivage de la facture ne les efface pas.
+    conn.prepare('UPDATE lots SET deleted_at = ? WHERE purchase_id = ? AND deleted_at IS NULL').run(now, id);
+    conn.prepare('UPDATE purchases SET deleted_at = ? WHERE id = ?').run(now, id);
+  });
+  run();
+}
+
+export async function restorePurchase(id: string): Promise<void> {
+  const conn = getConnection();
+  const run = conn.transaction(() => {
+    conn.prepare('UPDATE purchases SET deleted_at = NULL WHERE id = ?').run(id);
+    conn.prepare('UPDATE lots SET deleted_at = NULL WHERE purchase_id = ?').run(id);
+  });
+  run();
 }
 
 export async function getAllLots(): Promise<Lot[]> {
   return getConnection()
-    .prepare('SELECT * FROM lots ORDER BY date_created DESC')
+    .prepare('SELECT * FROM lots WHERE deleted_at IS NULL ORDER BY date_created DESC')
     .all()
     .map(rowToLot);
 }
 
 export async function saveLot(l: Lot): Promise<void> {
-  upsertLot(getConnection(), l);
+  const conn = getConnection();
+  const run = conn.transaction(() => {
+    // Module 7 : la référence du lot suit la même règle d'immutabilité que le
+    // n° de facture d'achat (Module 6) — générée par le serveur à la création,
+    // jamais modifiable ensuite.
+    const existing = conn.prepare('SELECT reference FROM lots WHERE id = ?').get(l.id) as { reference: string } | undefined;
+    const isNew = !existing;
+    const finalLot: Lot = {
+      ...l,
+      reference: existing ? existing.reference : generateSubReference(conn, l.purchaseId)
+    };
+    upsertLot(conn, finalLot);
+
+    // Module 10 : le tri d'un lot issu d'un achat constitue une entrée en stock
+    if (isNew) {
+      const purchaseRow = conn.prepare('SELECT reference, supplier, articles FROM purchases WHERE id = ?').get(l.purchaseId) as { reference: string; supplier: string; articles: string } | undefined;
+      let amount: number | undefined;
+      if (purchaseRow) {
+        try {
+          const articles = JSON.parse(purchaseRow.articles || '[]') as { id: string; caratPrice: number }[];
+          const article = articles.find(a => a.id === l.purchaseArticleId);
+          if (article) amount = Math.round((article.caratPrice * (l.weight ?? 0)) * 100) / 100;
+        } catch { /* articles JSON illisible, on journalise sans montant */ }
+      }
+      logMovement(conn, 'ACHAT', 'lot', l.id, finalLot.reference, l.weight, amount,
+        purchaseRow ? `Achat ${purchaseRow.reference} — trié (${purchaseRow.supplier})` : 'Lot trié');
+    }
+  });
+  run();
 }
 
 export async function deleteLot(id: string): Promise<void> {
-  getConnection().prepare('DELETE FROM lots WHERE id = ?').run(id);
+  getConnection().prepare('UPDATE lots SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
 }
 
+export async function restoreLot(id: string): Promise<void> {
+  getConnection().prepare('UPDATE lots SET deleted_at = NULL WHERE id = ?').run(id);
+}
+
+// Conservée pour compatibilité : deletePurchase gère désormais lui-même l'archivage
+// en cascade de ses lots dans la même transaction (voir plus haut).
 export async function deleteLotsByPurchaseId(purchaseId: string): Promise<void> {
-  getConnection().prepare('DELETE FROM lots WHERE purchase_id = ?').run(purchaseId);
+  getConnection().prepare('UPDATE lots SET deleted_at = ? WHERE purchase_id = ? AND deleted_at IS NULL').run(new Date().toISOString(), purchaseId);
 }
 
 export async function getAllSuppliers(): Promise<Supplier[]> {
   return getConnection()
-    .prepare('SELECT * FROM suppliers ORDER BY date_added DESC')
+    .prepare('SELECT * FROM suppliers WHERE deleted_at IS NULL ORDER BY date_added DESC')
     .all()
     .map(rowToSupplier);
 }
@@ -770,12 +1028,16 @@ export async function saveSupplier(s: Supplier): Promise<void> {
 }
 
 export async function deleteSupplier(id: string): Promise<void> {
-  getConnection().prepare('DELETE FROM suppliers WHERE id = ?').run(id);
+  getConnection().prepare('UPDATE suppliers SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+}
+
+export async function restoreSupplier(id: string): Promise<void> {
+  getConnection().prepare('UPDATE suppliers SET deleted_at = NULL WHERE id = ?').run(id);
 }
 
 export async function getAllClients(): Promise<Client[]> {
   return getConnection()
-    .prepare('SELECT * FROM clients ORDER BY date_added DESC')
+    .prepare('SELECT * FROM clients WHERE deleted_at IS NULL ORDER BY date_added DESC')
     .all()
     .map(rowToClient);
 }
@@ -785,12 +1047,16 @@ export async function saveClient(c: Client): Promise<void> {
 }
 
 export async function deleteClient(id: string): Promise<void> {
-  getConnection().prepare('DELETE FROM clients WHERE id = ?').run(id);
+  getConnection().prepare('UPDATE clients SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+}
+
+export async function restoreClient(id: string): Promise<void> {
+  getConnection().prepare('UPDATE clients SET deleted_at = NULL WHERE id = ?').run(id);
 }
 
 export async function getAllSalesInvoices(): Promise<SalesInvoice[]> {
   return getConnection()
-    .prepare('SELECT * FROM sales_invoices ORDER BY date DESC')
+    .prepare('SELECT * FROM sales_invoices WHERE deleted_at IS NULL ORDER BY date DESC')
     .all()
     .map(rowToInvoice);
 }
@@ -803,8 +1069,16 @@ export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
     // Marque automatiquement les pierres référencées comme vendues (facture payée ou en attente)
     if (inv.status === 'Payée' || inv.status === 'En attente') {
       const markSold = conn.prepare("UPDATE gemstones SET status = 'Vendu' WHERE id = ?");
+      const getGem = conn.prepare('SELECT reference, status FROM gemstones WHERE id = ?');
       (inv.items ?? []).forEach(item => {
-        if (item.gemstoneId) markSold.run(item.gemstoneId);
+        if (!item.gemstoneId) return;
+        const gem = getGem.get(item.gemstoneId) as { reference: string; status: string } | undefined;
+        markSold.run(item.gemstoneId);
+        // Module 10 : un seul mouvement VENTE par passage effectif au statut Vendu
+        // (évite de dupliquer l'écriture si la facture est modifiée/réenregistrée ensuite)
+        if (gem && gem.status !== 'Vendu') {
+          logMovement(conn, 'VENTE', 'gemstone', item.gemstoneId, gem.reference, item.weight, item.totalAmount, `Facture ${inv.invoiceNumber} — ${inv.clientName}`);
+        }
       });
     }
   });
@@ -812,12 +1086,16 @@ export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
 }
 
 export async function deleteSalesInvoice(id: string): Promise<void> {
-  getConnection().prepare('DELETE FROM sales_invoices WHERE id = ?').run(id);
+  getConnection().prepare('UPDATE sales_invoices SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+}
+
+export async function restoreSalesInvoice(id: string): Promise<void> {
+  getConnection().prepare('UPDATE sales_invoices SET deleted_at = NULL WHERE id = ?').run(id);
 }
 
 export async function getAllPriceGuideEntries(): Promise<PriceGuideEntry[]> {
   return getConnection()
-    .prepare('SELECT * FROM price_guide ORDER BY gemstone_type, sort_order, tier_name')
+    .prepare('SELECT * FROM price_guide WHERE deleted_at IS NULL ORDER BY gemstone_type, sort_order, tier_name')
     .all()
     .map((r: any) => ({
       id: r.id,
@@ -846,7 +1124,93 @@ export async function savePriceGuideEntry(entry: PriceGuideEntry): Promise<void>
 }
 
 export async function deletePriceGuideEntry(id: string): Promise<void> {
-  getConnection().prepare('DELETE FROM price_guide WHERE id = ?').run(id);
+  getConnection().prepare('UPDATE price_guide SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+}
+
+export async function restorePriceGuideEntry(id: string): Promise<void> {
+  getConnection().prepare('UPDATE price_guide SET deleted_at = NULL WHERE id = ?').run(id);
+}
+
+/* ==========================================================================
+   Module 12 : Bijoux composés (monture + pierres serties) et décomposition
+   ========================================================================== */
+
+function rowToBijou(r: any): Bijou {
+  return {
+    id: r.id,
+    reference: r.reference,
+    description: r.description ?? '',
+    metal: r.metal ?? '',
+    metalWeight: r.metal_weight,
+    gemstoneIds: JSON.parse(r.gemstone_ids || '[]'),
+    costPrice: r.cost_price,
+    sellingPrice: r.selling_price,
+    status: r.status,
+    dateAdded: r.date_added,
+    notes: r.notes ?? undefined
+  };
+}
+
+export async function getAllBijoux(): Promise<Bijou[]> {
+  return getConnection()
+    .prepare('SELECT * FROM bijoux WHERE deleted_at IS NULL ORDER BY date_added DESC')
+    .all()
+    .map(rowToBijou);
+}
+
+export async function saveBijou(bijou: Bijou): Promise<void> {
+  getConnection().prepare(`
+    INSERT OR REPLACE INTO bijoux (id, reference, description, metal, metal_weight, gemstone_ids, cost_price, selling_price, status, date_added, notes)
+    VALUES (@id, @reference, @description, @metal, @metalWeight, @gemstoneIds, @costPrice, @sellingPrice, @status, @dateAdded, @notes)
+  `).run({
+    id: bijou.id,
+    reference: bijou.reference,
+    description: bijou.description ?? '',
+    metal: bijou.metal ?? '',
+    metalWeight: bijou.metalWeight ?? 0,
+    gemstoneIds: JSON.stringify(bijou.gemstoneIds ?? []),
+    costPrice: bijou.costPrice ?? 0,
+    sellingPrice: bijou.sellingPrice ?? 0,
+    status: bijou.status,
+    dateAdded: bijou.dateAdded,
+    notes: bijou.notes ?? null
+  });
+}
+
+export async function deleteBijou(id: string): Promise<void> {
+  getConnection().prepare('UPDATE bijoux SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+}
+
+export async function restoreBijou(id: string): Promise<void> {
+  getConnection().prepare('UPDATE bijoux SET deleted_at = NULL WHERE id = ?').run(id);
+}
+
+// Décomposition : action explicite et distincte de l'archivage. Libère chaque
+// pierre sertie (repasse à 'Disponible', comme n'importe quelle pierre en stock
+// standalone) et journalise un mouvement AJUSTEMENT par pierre (Module 10) —
+// aucun nouveau type de mouvement n'est introduit, on reste dans le périmètre
+// chiffré. Le bijou lui-même passe au statut terminal 'Décomposé' (pas archivé :
+// il reste visible en historique).
+export async function decomposeBijou(id: string): Promise<void> {
+  const conn = getConnection();
+  const run = conn.transaction(() => {
+    const row: any = conn.prepare('SELECT * FROM bijoux WHERE id = ? AND deleted_at IS NULL').get(id);
+    if (!row) throw new Error('Bijou introuvable');
+    if (row.status === 'Décomposé') throw new Error('Ce bijou est déjà décomposé');
+    const bijou = rowToBijou(row);
+
+    const getGem = conn.prepare('SELECT reference FROM gemstones WHERE id = ?');
+    const releaseGem = conn.prepare("UPDATE gemstones SET status = 'Disponible' WHERE id = ?");
+    for (const gemId of bijou.gemstoneIds) {
+      const gem: any = getGem.get(gemId);
+      if (!gem) continue;
+      releaseGem.run(gemId);
+      logMovement(conn, 'AJUSTEMENT', 'gemstone', gemId, gem.reference, undefined, undefined, `Libérée par décomposition du bijou ${bijou.reference}`);
+    }
+
+    conn.prepare("UPDATE bijoux SET status = 'Décomposé' WHERE id = ?").run(id);
+  });
+  run();
 }
 
 export async function getCompanySettings(): Promise<CompanySettings | null> {
@@ -868,6 +1232,59 @@ export async function getCompanySettings(): Promise<CompanySettings | null> {
 
 export async function saveCompanySettings(settings: CompanySettings): Promise<void> {
   upsertCompanySettings(getConnection(), settings);
+}
+
+/* ==========================================================================
+   Module 11 : Corbeille — vue unifiée des éléments archivés, toutes entités
+   ========================================================================== */
+
+export async function getTrash(): Promise<TrashItem[]> {
+  const conn = getConnection();
+  const items: TrashItem[] = [];
+
+  (conn.prepare("SELECT * FROM gemstones WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
+    items.push({ type: 'gemstone', id: r.id, label: r.reference, detail: `${r.type} · ${r.weight} ct`, deletedAt: r.deleted_at });
+  });
+  (conn.prepare("SELECT * FROM purchases WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
+    items.push({ type: 'purchase', id: r.id, label: `Achat ${r.reference}`, detail: r.supplier, deletedAt: r.deleted_at });
+  });
+  (conn.prepare("SELECT * FROM lots WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
+    items.push({ type: 'lot', id: r.id, label: `Lot ${r.reference}`, detail: `${r.gemstone_type} · ${r.weight} ct`, deletedAt: r.deleted_at });
+  });
+  (conn.prepare("SELECT * FROM suppliers WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
+    items.push({ type: 'supplier', id: r.id, label: r.name, detail: 'Fournisseur', deletedAt: r.deleted_at });
+  });
+  (conn.prepare("SELECT * FROM clients WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
+    items.push({ type: 'client', id: r.id, label: r.name, detail: 'Client', deletedAt: r.deleted_at });
+  });
+  (conn.prepare("SELECT * FROM sales_invoices WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
+    items.push({ type: 'salesInvoice', id: r.id, label: `Facture ${r.invoice_number}`, detail: `${r.client_name ?? ''} · ${r.total_incl_tax} €`, deletedAt: r.deleted_at });
+  });
+  (conn.prepare("SELECT * FROM price_guide WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
+    items.push({ type: 'priceGuideEntry', id: r.id, label: r.tier_name, detail: r.gemstone_type, deletedAt: r.deleted_at });
+  });
+  (conn.prepare("SELECT * FROM bijoux WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
+    items.push({ type: 'bijou', id: r.id, label: `Bijou ${r.reference}`, detail: r.metal, deletedAt: r.deleted_at });
+  });
+
+  return items.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+}
+
+const TRASH_RESTORE_HANDLERS: Record<TrashEntityType, (id: string) => Promise<void>> = {
+  gemstone: restoreGemstone,
+  purchase: restorePurchase,
+  lot: restoreLot,
+  supplier: restoreSupplier,
+  client: restoreClient,
+  salesInvoice: restoreSalesInvoice,
+  priceGuideEntry: restorePriceGuideEntry,
+  bijou: restoreBijou
+};
+
+export async function restoreTrashItem(type: TrashEntityType, id: string): Promise<void> {
+  const handler = TRASH_RESTORE_HANDLERS[type];
+  if (!handler) throw new Error(`Type d'élément inconnu pour la restauration : ${type}`);
+  await handler(id);
 }
 
 /* ==========================================================================

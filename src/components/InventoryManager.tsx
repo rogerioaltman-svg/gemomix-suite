@@ -15,10 +15,12 @@ import {
   Lock,
   Compass,
   FileCheck,
-  Award
+  Award,
+  History
 } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
 import RecuttingSection from './RecuttingSection';
+import MovementHistory from './MovementHistory';
 
 const PROVENANCE_OPTIONS = ['Stock initial', "Transformation d'un lot", 'Autre'];
 
@@ -119,6 +121,7 @@ export default function InventoryManager({
   const [id, setId] = useState('');
   const [reference, setReference] = useState('');
   const [referenceError, setReferenceError] = useState('');
+  const [sellingPriceError, setSellingPriceError] = useState('');
   const [type, setType] = useState('Diamant');
   const [customType, setCustomType] = useState('');
   const [weight, setWeight] = useState<number | string>(1.0);
@@ -160,6 +163,7 @@ export default function InventoryManager({
       setId(selectedGem.id);
       setReference(selectedGem.reference);
       setReferenceError('');
+      setSellingPriceError('');
       setType(selectedGem.type);
       setWeight(selectedGem.weight);
       setCut(selectedGem.cut);
@@ -217,6 +221,7 @@ export default function InventoryManager({
     const newRefId = gemstones.length + 1;
     setReference(`PP-2026-NEW-${newRefId.toString().padStart(3, '0')}`);
     setReferenceError('');
+    setSellingPriceError('');
     setType('Diamant');
     setWeight(1.0);
     setCut('Brillant Rond');
@@ -278,6 +283,14 @@ export default function InventoryManager({
     if (!reference.trim()) {
       setReferenceError("La référence unique est requise.");
       document.getElementById('gem-ref-input')?.focus();
+      return;
+    }
+
+    // Module 9 : le prix de vente devient obligatoire au moment de passer une
+    // pierre au statut "Disponible" (pas avant, le temps de l'expertiser).
+    if (status === 'Disponible' && !(Number(sellingPrice) > 0)) {
+      setSellingPriceError("Le prix de vente est requis pour passer une pierre au statut Disponible.");
+      document.getElementById('gem-selling-price-input')?.focus();
       return;
     }
 
@@ -382,13 +395,18 @@ export default function InventoryManager({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Reference */}
               <div>
-                <label className="block text-gray-400 text-xs font-mono mb-1">RÉFÉRENCE UNIQUE *</label>
+                <label className="block text-gray-400 text-xs font-mono mb-1 flex items-center gap-1">
+                  <span>RÉFÉRENCE UNIQUE *</span>
+                  {selectedGem?.sourcePurchaseId && <Lock className="h-3 w-3 text-gray-500 normal-case" />}
+                </label>
                 <input
                   id="gem-ref-input"
                   type="text"
+                  readOnly={!!selectedGem?.sourcePurchaseId}
                   value={reference}
                   onChange={(e) => { setReference(e.target.value); setReferenceError(''); }}
-                  className={`w-full px-3 py-2 text-xs bg-[#171e2c] border ${referenceError ? 'border-red-500/70' : 'border-[#27354d]'} rounded-lg text-white focus:outline-none focus:border-[#b4985c] font-mono`}
+                  title={selectedGem?.sourcePurchaseId ? "Référence attribuée automatiquement à partir de l'achat d'origine (n° facture/suffixe) — non modifiable" : undefined}
+                  className={`w-full px-3 py-2 text-xs bg-[#171e2c] border ${referenceError ? 'border-red-500/70' : 'border-[#27354d]'} rounded-lg text-white focus:outline-none focus:border-[#b4985c] font-mono ${selectedGem?.sourcePurchaseId ? 'cursor-not-allowed bg-[#12161f]' : ''}`}
                   placeholder="ex: PP-2026-DI-001"
                 />
                 {referenceError && (
@@ -649,9 +667,9 @@ export default function InventoryManager({
             {/* Status Selector */}
             <div>
               <label className="block text-gray-400 text-xs font-mono mb-1">STATUT DE STOCK</label>
-              <select 
+              <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value as any)}
+                onChange={(e) => { setStatus(e.target.value as any); setSellingPriceError(''); }}
                 className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none focus:border-[#b4985c]"
               >
                 <option value="Disponible">Disponible</option>
@@ -674,14 +692,20 @@ export default function InventoryManager({
                 />
               </div>
               <div>
-                <label className="block text-gray-400 text-[10px] font-mono mb-1">ESTIMATION (€)</label>
+                <label className="block text-gray-400 text-[10px] font-mono mb-1">
+                  ESTIMATION (€) {status === 'Disponible' && <span className="text-red-400">*</span>}
+                </label>
                 <input
+                  id="gem-selling-price-input"
                   type="number"
                   value={sellingPrice}
-                  onChange={(e) => setSellingPrice(e.target.value)}
+                  onChange={(e) => { setSellingPrice(e.target.value); setSellingPriceError(''); }}
                   placeholder="Non estimée"
-                  className="w-full px-2 py-1.5 text-xs bg-[#121620] border border-[#212a3d] rounded text-white font-mono text-yellow-500 font-bold"
+                  className={`w-full px-2 py-1.5 text-xs bg-[#121620] border ${sellingPriceError ? 'border-red-500/70' : 'border-[#212a3d]'} rounded text-white font-mono text-yellow-500 font-bold`}
                 />
+                {sellingPriceError && (
+                  <p className="text-red-400 text-[9px] mt-1 col-span-2">{sellingPriceError}</p>
+                )}
               </div>
 
               {/* Barème d'estimation par paliers métier */}
@@ -864,6 +888,22 @@ export default function InventoryManager({
               gemstone={selectedGem}
               onUpdateGemstone={onUpdateGemInline}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Module 10 : historique des mouvements de stock de cette pierre */}
+      {selectedGem && (
+        <div className="px-6 pb-6">
+          <div className="border-t border-gray-800 pt-5">
+            <h3 className="text-sm font-bold font-mono text-[#b4985c] uppercase border-b border-gray-800 pb-1.5 mb-3 flex items-center gap-1.5">
+              <History className="h-4 w-4" />
+              <span>Historique des mouvements</span>
+            </h3>
+            {/* La key force un remontage (donc un nouveau fetch) quand la retaille ou le poids changent */}
+            <div key={`${selectedGem.id}-${selectedGem.recuttings?.length ?? 0}-${selectedGem.weight}`}>
+              <MovementHistory entityType="gemstone" entityId={selectedGem.id} />
+            </div>
           </div>
         </div>
       )}

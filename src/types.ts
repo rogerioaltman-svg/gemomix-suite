@@ -3,6 +3,34 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+// Module 10 : historique des mouvements de stock. Journal immuable — jamais
+// modifié ni supprimé, même par le mécanisme d'archivage du Module 11.
+export type StockMovementType = 'ACHAT' | 'VENTE' | 'RETAILLE' | 'AJUSTEMENT';
+
+export interface StockMovement {
+  id: string;
+  type: StockMovementType;
+  entityType: 'gemstone' | 'lot';
+  entityId: string;
+  entityReference: string; // dénormalisé, lisible même si l'objet change ensuite
+  weight?: number;
+  amount?: number;
+  notes?: string;
+  createdAt: string;
+}
+
+// Module 11 : suppression logique. Un élément archivé de n'importe quelle
+// entité, présenté sous une forme unifiée pour l'écran Corbeille.
+export type TrashEntityType = 'gemstone' | 'purchase' | 'lot' | 'supplier' | 'client' | 'salesInvoice' | 'priceGuideEntry' | 'bijou';
+
+export interface TrashItem {
+  type: TrashEntityType;
+  id: string;
+  label: string; // ex: référence, nom, n° de facture...
+  detail?: string; // ex: variété, fournisseur, montant...
+  deletedAt: string;
+}
+
 export interface Gemstone {
   id: string;
   reference: string;
@@ -172,6 +200,25 @@ export interface InvoiceItem {
   unitPrice: number;
   vatRate: number; // percentage (e.g. 20)
   totalAmount: number; // excl tax
+}
+
+// Module 12 : bijoux composés (monture + pierres serties) et leur décomposition.
+// La liste des pierres serties est stockée directement sur le bijou (comme les
+// articles d'un achat) plutôt que via un champ inverse sur Gemstone : une pierre
+// est "disponible" pour un nouveau bijou tant qu'elle n'apparaît dans aucun bijou
+// non décomposé — seule l'action explicite de décomposition la libère.
+export interface Bijou {
+  id: string;
+  reference: string;
+  description: string;
+  metal: string; // Or, Argent, Platine...
+  metalWeight: number; // grammes
+  gemstoneIds: string[]; // pierres actuellement serties
+  costPrice: number;
+  sellingPrice: number;
+  status: 'Disponible' | 'Réservé' | 'Vendu' | 'Confié' | 'Décomposé';
+  dateAdded: string;
+  notes?: string;
 }
 
 export interface SalesInvoice {

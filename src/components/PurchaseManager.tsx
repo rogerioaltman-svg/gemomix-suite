@@ -6,27 +6,30 @@
 import React, { useState, useMemo } from 'react';
 import { Purchase, PurchaseArticle, Lot, Supplier, Gemstone } from '../types';
 import PhotoCapture from './PhotoCapture';
-import { 
-  ShoppingBag, 
-  Plus, 
-  Trash2, 
-  Layers, 
-  Database, 
-  Calendar, 
-  TrendingUp, 
-  Calculator, 
-  FolderOpen, 
-  FileText, 
-  ChevronRight, 
-  Activity, 
-  Sparkles, 
-  Hash, 
+import MovementHistory from './MovementHistory';
+import {
+  ShoppingBag,
+  Plus,
+  Trash2,
+  Layers,
+  Database,
+  Calendar,
+  TrendingUp,
+  Calculator,
+  FolderOpen,
+  FileText,
+  ChevronRight,
+  Activity,
+  Sparkles,
+  Hash,
   ArrowRight,
   Sparkle,
   Inbox,
   Scale,
   Check,
-  Pencil
+  Pencil,
+  Lock,
+  History
 } from 'lucide-react';
 
 interface PurchaseManagerProps {
@@ -60,6 +63,16 @@ export default function PurchaseManager({
 
   // Erreurs de validation inline (clé = champ concerné)
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+
+  // Module 10 : lots dont l'historique des mouvements est actuellement déplié
+  const [expandedHistoryLots, setExpandedHistoryLots] = useState<Set<string>>(new Set());
+  const toggleLotHistory = (lotId: string) => {
+    setExpandedHistoryLots(prev => {
+      const next = new Set(prev);
+      if (next.has(lotId)) next.delete(lotId); else next.add(lotId);
+      return next;
+    });
+  };
 
   const clearError = (key: string) => {
     setFormErrors(prev => {
@@ -184,16 +197,15 @@ export default function PurchaseManager({
   const [showLotDetails, setShowLotDetails] = useState(false);
   const [lastSavedLot, setLastSavedLot] = useState<{ id: string; reference: string; weight: number } | null>(null);
 
-  // Suggère la prochaine référence de lot (LOT-2026-001, -002...), unique parmi les lots existants
-  const suggestNextLotRef = (existingLots: Lot[]): string => {
-    const year = new Date().getFullYear();
-    let n = existingLots.length + 1;
-    let ref: string;
-    do {
-      ref = `LOT-${year}-${String(n).padStart(3, '0')}`;
-      n++;
-    } while (existingLots.some(l => l.reference === ref));
-    return ref;
+  // Module 7 : la référence du lot (n° facture d'achat / suffixe, ex "1/A") est
+  // toujours attribuée par le serveur. On récupère un aperçu avant enregistrement.
+  const fetchNextSubReference = async (purchaseId: string): Promise<string> => {
+    try {
+      const { reference } = await fetch(`/api/purchases/${purchaseId}/next-sub-reference`).then(r => r.json());
+      return reference || '';
+    } catch {
+      return ''; // Le serveur attribuera la référence à l'enregistrement
+    }
   };
 
   // Add article to temp list
@@ -284,7 +296,7 @@ export default function PurchaseManager({
 
     const weightNum = parseFloat(lotWeight) || 0;
     const errs: Record<string, string> = {};
-    if (!lotRef.trim()) errs.lotRef = "Veuillez saisir une référence de lot (ex: LOT-01).";
+    if (!lotRef.trim() || lotRef === '…') errs.lotRef = "La référence n'a pas pu être générée. Réessayez d'ouvrir le tri.";
     if (weightNum <= 0) errs.lotWeight = "Le poids du lot doit être supérieur à 0 ct.";
     if (Object.keys(errs).length > 0) {
       showErrors(errs, errs.lotRef ? 'lot-ref-input' : 'lot-weight-input');
@@ -322,8 +334,10 @@ export default function PurchaseManager({
       }, 6000);
     }
 
-    // Clear active lot form ; la réf suivante est pré-proposée, focus sur le poids
-    setLotRef(suggestNextLotRef([...lots, newLot]));
+    // Clear active lot form ; la réf suivante (attribuée par le serveur) est
+    // pré-proposée, focus sur le poids
+    setLotRef('…');
+    fetchNextSubReference(purchase.id).then(setLotRef);
     setLotWeight('');
     setLotQty('');
     setLotSize('');
@@ -404,15 +418,21 @@ export default function PurchaseManager({
         </div>
 
         {managerTab === 'purchases' && !isAddingPurchase && !activeTriageArticle && (
-          <button 
+          <button
             id="btn-trigger-add-pur"
-            onClick={() => {
+            onClick={async () => {
               setIsAddingPurchase(true);
               setEditingPurchaseId(null);
-              setPurchaseRef('');
+              setPurchaseRef('…'); // Numéro en cours d'attribution
               setSupplier('');
               setPNotes('');
               setTempArticles([]);
+              try {
+                const { reference } = await fetch('/api/purchases/next-reference').then(r => r.json());
+                setPurchaseRef(reference);
+              } catch {
+                setPurchaseRef(''); // Le serveur attribuera le numéro à l'enregistrement
+              }
             }}
             className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-lg flex items-center gap-1.5 transition-colors"
           >
@@ -542,14 +562,17 @@ export default function PurchaseManager({
                 <form onSubmit={handleSaveLotInTriage} className="space-y-3.5 text-xs">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <label className="block text-gray-400 font-mono text-[10px] uppercase">Réf. Lot (Lot #)</label>
+                      <label className="block text-gray-400 font-mono text-[10px] uppercase flex items-center gap-1">
+                        <span>Réf. Lot / Pierre</span>
+                        <Lock className="h-3 w-3 text-gray-500 normal-case" />
+                      </label>
                       <input
                         id="lot-ref-input"
                         type="text"
+                        readOnly
                         value={lotRef}
-                        onChange={(e) => { setLotRef(e.target.value); clearError('lotRef'); }}
-                        placeholder="ex: LOT-2026-A"
-                        className={`w-full px-2.5 py-1.5 bg-[#171e2c] border ${errorBorder('lotRef')} text-white rounded font-mono`}
+                        title="Numéro attribué automatiquement à partir du n° de la facture d'achat"
+                        className={`w-full px-2.5 py-1.5 bg-[#12161f] border ${errorBorder('lotRef')} text-gray-300 rounded font-mono cursor-not-allowed`}
                       />
                       <FieldError field="lotRef" />
                     </div>
@@ -791,6 +814,30 @@ export default function PurchaseManager({
                         </div>
                       </div>
 
+                      {/* Module 8 : report auto du prix d'achat depuis l'article parent (lecture seule) */}
+                      <div className="flex items-center justify-between gap-2 bg-[#12161f] border border-gray-800/60 rounded-lg px-2.5 py-2 text-[11px] font-mono">
+                        <span className="text-gray-500 flex items-center gap-1">
+                          <Lock className="h-3 w-3" /> Prix d'achat
+                        </span>
+                        <span className="text-[#eedfa7]">
+                          {activeTriageArticle.article.caratPrice.toLocaleString('fr-FR')} €/ct
+                          <span className="text-gray-500 mx-1">→</span>
+                          <b>{(lot.weight * activeTriageArticle.article.caratPrice).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} €</b>
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleLotHistory(lot.id)}
+                        className="w-full flex items-center justify-between text-[10px] font-mono text-gray-500 hover:text-gray-300 transition-colors py-1"
+                      >
+                        <span className="flex items-center gap-1"><History className="h-3 w-3" /> Historique des mouvements</span>
+                        <span>{expandedHistoryLots.has(lot.id) ? '▾ replier' : '▸ déplier'}</span>
+                      </button>
+                      {expandedHistoryLots.has(lot.id) && (
+                        <MovementHistory entityType="lot" entityId={lot.id} compact />
+                      )}
+
                       {lot.notes && (
                         <p className="text-[11px] text-gray-400 bg-black/30 p-2 rounded border border-gray-800/40 italic">
                           "{lot.notes}"
@@ -841,14 +888,17 @@ export default function PurchaseManager({
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
             <div className="space-y-1 font-mono uppercase">
-              <label className="block text-gray-300">Référence Facture / Bordereau</label>
+              <label className="block text-gray-300 flex items-center gap-1">
+                <span>N° Facture d'Achat</span>
+                <Lock className="h-3 w-3 text-gray-500 normal-case" />
+              </label>
               <input
                 id="pur-ref"
                 type="text"
+                readOnly
                 value={purchaseRef}
-                onChange={(e) => { setPurchaseRef(e.target.value); clearError('purchaseRef'); }}
-                placeholder="ex: F-2026-N009"
-                className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('purchaseRef')} text-white rounded focus:border-[#b4985c]`}
+                title="Numéro attribué automatiquement — sert de racine à la numérotation des lots et pierres issus de cet achat"
+                className={`w-full px-3 py-2 bg-[#12161f] border ${errorBorder('purchaseRef')} text-gray-300 rounded cursor-not-allowed`}
               />
               <FieldError field="purchaseRef" />
             </div>
@@ -1262,10 +1312,11 @@ export default function PurchaseManager({
                                   {/* Triage Trigger action btn */}
                                   <button
                                     id={`btn-triage-${article.id}`}
-                                    onClick={() => {
+                                    onClick={async () => {
                                       setActiveTriageArticle({ purchase, article });
-                                      setLotRef(suggestNextLotRef(lots));
+                                      setLotRef('…');
                                       setLastSavedLot(null);
+                                      setLotRef(await fetchNextSubReference(purchase.id));
                                     }}
                                     className="w-full py-2 bg-[#1b2333] hover:bg-[#202a3d] border border-gray-700 hover:border-gray-600 text-xs font-mono font-bold text-[#eedfa7] rounded-lg transition-all flex items-center justify-center gap-1"
                                   >
@@ -1312,6 +1363,7 @@ export default function PurchaseManager({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {lots.map((lot) => {
                 const parentPurchase = purchases.find(p => p.id === lot.purchaseId);
+                const parentArticle = parentPurchase?.articles.find(a => a.id === lot.purchaseArticleId);
                 return (
                   <div 
                     key={lot.id} 
@@ -1385,6 +1437,34 @@ export default function PurchaseManager({
                         <span className="text-gray-300 truncate block">{[lot.averageColor, lot.averageClarity].filter(Boolean).join(' / ') || '-'}</span>
                       </div>
                     </div>
+
+                    {/* Module 8 : report auto du prix d'achat depuis l'article parent (lecture seule) */}
+                    <div className="flex items-center justify-between gap-2 bg-black/20 border border-gray-800/60 rounded-lg px-2.5 py-2 text-[11px] font-mono">
+                      <span className="text-gray-500 flex items-center gap-1">
+                        <Lock className="h-3 w-3" /> Prix d'achat
+                      </span>
+                      {parentArticle ? (
+                        <span className="text-[#eedfa7]">
+                          {parentArticle.caratPrice.toLocaleString('fr-FR')} €/ct
+                          <span className="text-gray-500 mx-1">→</span>
+                          <b>{(lot.weight * parentArticle.caratPrice).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} €</b>
+                        </span>
+                      ) : (
+                        <span className="text-gray-600 italic">Article d'origine introuvable</span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleLotHistory(lot.id)}
+                      className="w-full flex items-center justify-between text-[10px] font-mono text-gray-500 hover:text-gray-300 transition-colors py-1"
+                    >
+                      <span className="flex items-center gap-1"><History className="h-3 w-3" /> Historique des mouvements</span>
+                      <span>{expandedHistoryLots.has(lot.id) ? '▾ replier' : '▸ déplier'}</span>
+                    </button>
+                    {expandedHistoryLots.has(lot.id) && (
+                      <MovementHistory entityType="lot" entityId={lot.id} compact />
+                    )}
 
                     {lot.notes && (
                       <p className="text-[11px] text-gray-400 bg-black/40 p-2 rounded.md border border-gray-800/50 italic leading-relaxed">

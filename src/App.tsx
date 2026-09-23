@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry } from './types';
+import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, Bijou } from './types';
 import { SEED_GEMSTONES, SEED_PURCHASES, SEED_LOTS } from './data';
 import Dashboard from './components/Dashboard';
 import InventoryManager from './components/InventoryManager';
@@ -14,14 +14,17 @@ import GemologyAiAssistant from './components/GemologyAiAssistant';
 import PurchaseManager from './components/PurchaseManager';
 import ContactManager from './components/ContactManager';
 import SalesManager from './components/SalesManager';
+import TrashManager from './components/TrashManager';
+import BijouManager from './components/BijouManager';
+import Sidebar from './components/Sidebar';
 import { normalizeGemstone } from "./utils/normalizeGemstone";
 
-import { 
-  Diamond, 
-  Layers, 
-  Search, 
-  Award, 
-  Cpu, 
+import {
+  Diamond,
+  Layers,
+  Search,
+  Award,
+  Cpu,
   FileCheck,
   AlertCircle,
   ShoppingBag,
@@ -29,7 +32,9 @@ import {
   Moon,
   Users,
   Receipt,
-  Settings
+  Settings,
+  Trash2,
+  Sparkles
 } from 'lucide-react';
 
 import SettingsManager from './components/SettingsManager';
@@ -43,6 +48,8 @@ export default function App() {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
   const [priceGuide, setPriceGuide] = useState<PriceGuideEntry[]>([]);
+  const [trash, setTrash] = useState<TrashItem[]>([]);
+  const [bijoux, setBijoux] = useState<Bijou[]>([]);
   
   const [selectedTab, setSelectedTab] = useState<string>('dashboard');
   const [selectedGem, setSelectedGem] = useState<Gemstone | null>(null);
@@ -58,7 +65,15 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('gemophy_theme', isDarkMode ? 'dark' : 'light');
   }, [isDarkMode]);
-  
+
+  // Sidebar (menu latéral desktop) : état replié/déplié persistant
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('gemophy_sidebar_collapsed') === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('gemophy_sidebar_collapsed', String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
   // Custom confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
@@ -66,38 +81,65 @@ export default function App() {
     onConfirm: () => void;
   } | null>(null);
 
+  // Recharge l'intégralité des données depuis l'API. Réutilisée au démarrage et
+  // après une restauration depuis la Corbeille (Module 11), qui peut ré-impacter
+  // plusieurs ressources à la fois (ex: restaurer un achat restaure ses lots).
+  const loadAllData = async () => {
+    try {
+      const [gemsRes, purchasesRes, lotsRes, suppliersRes, clientsRes, invoicesRes, companyRes, priceGuideRes, trashRes, bijouxRes] = await Promise.all([
+        fetch('/api/gemstones').then(r => r.ok ? r.json() : []),
+        fetch('/api/purchases').then(r => r.ok ? r.json() : []),
+        fetch('/api/lots').then(r => r.ok ? r.json() : []),
+        fetch('/api/suppliers').then(r => r.ok ? r.json() : []),
+        fetch('/api/clients').then(r => r.ok ? r.json() : []),
+        fetch('/api/sales-invoices').then(r => r.ok ? r.json() : []),
+        fetch('/api/company-settings').then(r => r.ok ? r.json() : null),
+        fetch('/api/price-guide').then(r => r.ok ? r.json() : []),
+        fetch('/api/trash').then(r => r.ok ? r.json() : []),
+        fetch('/api/bijoux').then(r => r.ok ? r.json() : [])
+      ]);
+
+      if (Array.isArray(gemsRes)) setGemstones(gemsRes.map(normalizeGemstone));
+      if (Array.isArray(purchasesRes)) setPurchases(purchasesRes);
+      if (Array.isArray(lotsRes)) setLots(lotsRes);
+      if (Array.isArray(suppliersRes)) setSuppliers(suppliersRes);
+      if (Array.isArray(clientsRes)) setClients(clientsRes);
+      if (Array.isArray(invoicesRes)) setInvoices(invoicesRes);
+      if (companyRes) setCompanySettings(companyRes);
+      if (Array.isArray(priceGuideRes)) setPriceGuide(priceGuideRes);
+      if (Array.isArray(trashRes)) setTrash(trashRes);
+      if (Array.isArray(bijouxRes)) setBijoux(bijouxRes);
+    } catch (err) {
+      console.error("Backend failed:", err);
+      setGemstones(SEED_GEMSTONES.map(normalizeGemstone));
+      setPurchases(SEED_PURCHASES);
+      setLots(SEED_LOTS);
+    }
+  };
+
   // Load from SQLite database (via API) on startup
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [gemsRes, purchasesRes, lotsRes, suppliersRes, clientsRes, invoicesRes, companyRes, priceGuideRes] = await Promise.all([
-          fetch('/api/gemstones').then(r => r.ok ? r.json() : []),
-          fetch('/api/purchases').then(r => r.ok ? r.json() : []),
-          fetch('/api/lots').then(r => r.ok ? r.json() : []),
-          fetch('/api/suppliers').then(r => r.ok ? r.json() : []),
-          fetch('/api/clients').then(r => r.ok ? r.json() : []),
-          fetch('/api/sales-invoices').then(r => r.ok ? r.json() : []),
-          fetch('/api/company-settings').then(r => r.ok ? r.json() : null),
-          fetch('/api/price-guide').then(r => r.ok ? r.json() : [])
-        ]);
-
-        if (Array.isArray(gemsRes)) setGemstones(gemsRes.map(normalizeGemstone));
-        if (Array.isArray(purchasesRes)) setPurchases(purchasesRes);
-        if (Array.isArray(lotsRes)) setLots(lotsRes);
-        if (Array.isArray(suppliersRes)) setSuppliers(suppliersRes);
-        if (Array.isArray(clientsRes)) setClients(clientsRes);
-        if (Array.isArray(invoicesRes)) setInvoices(invoicesRes);
-        if (companyRes) setCompanySettings(companyRes);
-        if (Array.isArray(priceGuideRes)) setPriceGuide(priceGuideRes);
-      } catch (err) {
-        console.error("Backend failed:", err);
-        setGemstones(SEED_GEMSTONES.map(normalizeGemstone));
-        setPurchases(SEED_PURCHASES);
-        setLots(SEED_LOTS);
-      }
-    }
-    loadData();
+    loadAllData();
   }, []);
+
+  // Module 11 : restauration d'un élément archivé depuis la Corbeille.
+  // On recharge l'ensemble des données par simplicité et sûreté : une
+  // restauration peut impacter plusieurs ressources liées (ex: un achat et
+  // ses lots), inutile de tenter un rafraîchissement partiel fragile.
+  const handleOpenTrash = async () => {
+    setSelectedTab('trash');
+    const items = await fetch('/api/trash').then(r => r.ok ? r.json() : []);
+    if (Array.isArray(items)) setTrash(items);
+  };
+
+  const handleRestoreTrashItem = async (type: TrashEntityType, id: string) => {
+    try {
+      await fetch(`/api/trash/${type}/${id}/restore`, { method: 'POST' });
+    } catch (e) {
+      console.error("Failed to restore trash item:", e);
+    }
+    await loadAllData();
+  };
 
   // --- Company Settings CRUD handlers ---
   const handleSaveCompanySettings = async (settings: CompanySettings) => {
@@ -146,6 +188,52 @@ export default function App() {
     }
   };
 
+  // --- Module 12 : Bijoux composés CRUD handlers ---
+  const handleSaveBijou = async (bijou: Bijou) => {
+    try {
+      const res = await fetch('/api/bijoux', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bijou)
+      });
+      if (res.ok) {
+        const list = await fetch('/api/bijoux').then(r => r.json());
+        setBijoux(list);
+      }
+    } catch {
+      const exists = bijoux.some(b => b.id === bijou.id);
+      setBijoux(exists ? bijoux.map(b => b.id === bijou.id ? bijou : b) : [bijou, ...bijoux]);
+    }
+  };
+
+  const handleDeleteBijou = (id: string) => {
+    setConfirmDialog({
+      title: "Supprimer le bijou",
+      message: "Ce bijou sera retiré. Vous pourrez le restaurer depuis la Corbeille à tout moment.",
+      onConfirm: async () => {
+        try {
+          await fetch(`/api/bijoux/${id}`, { method: 'DELETE' });
+          const list = await fetch('/api/bijoux').then(r => r.json());
+          setBijoux(list);
+        } catch {
+          setBijoux(bijoux.filter(b => b.id !== id));
+        }
+        setConfirmDialog(null);
+      }
+    });
+  };
+
+  // Décomposition : action distincte de la suppression, libère les pierres
+  // serties (repassent 'Disponible') — recharge bijoux ET pierres.
+  const handleDecomposeBijou = async (id: string) => {
+    try {
+      await fetch(`/api/bijoux/${id}/decompose`, { method: 'POST' });
+    } catch (e) {
+      console.error("Failed to decompose bijou:", e);
+    }
+    await loadAllData();
+  };
+
   // --- Supplier CRUD handlers ---
   const handleSaveSupplier = async (savedSup: Supplier) => {
     try {
@@ -170,7 +258,7 @@ export default function App() {
   const handleDeleteSupplier = (id: string) => {
     setConfirmDialog({
       title: "Purger ce fournisseur",
-      message: "Êtes-vous sûr de vouloir supprimer définitivement ce fournisseur de l'annuaire ?",
+      message: "Ce fournisseur sera retiré de l'annuaire. Vous pourrez le restaurer depuis la Corbeille à tout moment.",
       onConfirm: async () => {
         try {
           await fetch(`/api/suppliers/${id}`, { method: 'DELETE' });
@@ -209,7 +297,7 @@ export default function App() {
   const handleDeleteClient = (id: string) => {
     setConfirmDialog({
       title: "Purger ce client",
-      message: "Êtes-vous sûr de vouloir supprimer définitivement ce client de l'annuaire ?",
+      message: "Ce client sera retiré de l'annuaire. Vous pourrez le restaurer depuis la Corbeille à tout moment.",
       onConfirm: async () => {
         try {
           await fetch(`/api/clients/${id}`, { method: 'DELETE' });
@@ -263,7 +351,7 @@ export default function App() {
   const handleDeleteInvoice = (id: string) => {
     setConfirmDialog({
       title: "Purger cette facture",
-      message: "Êtes-vous sûr de vouloir supprimer définitivement cette facture de vente des archives comptables ?",
+      message: "Cette facture sera retirée du registre. Vous pourrez la restaurer depuis la Corbeille à tout moment.",
       onConfirm: async () => {
         try {
           await fetch(`/api/sales-invoices/${id}`, { method: 'DELETE' });
@@ -335,7 +423,7 @@ export default function App() {
     if (!gem) return;
     setConfirmDialog({
       title: "Supprimer la pierre précieuse",
-      message: `Voulez-vous vraiment supprimer la pierre précieuse ${gem.reference} de l'inventaire ? Cette action est irréversible.`,
+      message: `La pierre ${gem.reference} sera retirée de l'inventaire. Vous pourrez la restaurer depuis la Corbeille à tout moment.`,
       onConfirm: async () => {
         const updatedList = gemstones.filter(g => g.id !== id);
         try {
@@ -387,7 +475,7 @@ export default function App() {
     if (!purchase) return;
     setConfirmDialog({
       title: "Supprimer l'achat",
-      message: `Voulez-vous supprimer l'achat "${purchase.reference}" de ${purchase.supplier} ainsi que tous les lots de tri associés ?`,
+      message: `L'achat "${purchase.reference}" de ${purchase.supplier} et ses lots de tri associés seront retirés. Vous pourrez tout restaurer depuis la Corbeille.`,
       onConfirm: async () => {
         const updatedList = purchases.filter(p => p.id !== id);
         const filteredLots = lots.filter(l => l.purchaseId !== id);
@@ -427,7 +515,7 @@ export default function App() {
     if (!lot) return;
     setConfirmDialog({
       title: "Supprimer le lot de tri",
-      message: `Voulez-vous vraiment supprimer le lot de tri "${lot.reference}" ?`,
+      message: `Le lot de tri "${lot.reference}" sera retiré. Vous pourrez le restaurer depuis la Corbeille à tout moment.`,
       onConfirm: async () => {
         const updatedList = lots.filter(l => l.id !== id);
         try {
@@ -462,6 +550,14 @@ export default function App() {
 
             <div className="md:hidden flex items-center gap-2">
               <button
+                id="tab-trash-mobile"
+                onClick={handleOpenTrash}
+                className={`w-9 h-9 rounded-lg transition-all cursor-pointer flex items-center justify-center shrink-0 ${selectedTab === 'trash' ? 'bg-[#bda165] text-black shadow-lg shadow-[#bda165]/20' : 'bg-gray-100 dark:bg-[#171e2c] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-[#1f283d] border border-gray-200 dark:border-[#27354d]'}`}
+                title="Corbeille"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <button
                 id="tab-settings-mobile"
                 onClick={() => setSelectedTab('settings')}
                 className={`w-9 h-9 rounded-lg transition-all cursor-pointer flex items-center justify-center shrink-0 ${selectedTab === 'settings' ? 'bg-[#bda165] text-black shadow-lg shadow-[#bda165]/20' : 'bg-gray-100 dark:bg-[#171e2c] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-[#1f283d] border border-gray-200 dark:border-[#27354d]'}`}
@@ -479,83 +575,85 @@ export default function App() {
             </div>
           </div>
 
-          <nav className="overflow-x-auto scrollbar-none py-1 min-w-0 flex-grow">
+          {/* Nav horizontale : uniquement sur mobile/tablette, remplacée par la sidebar en desktop */}
+          <nav className="md:hidden overflow-x-auto scrollbar-none py-1 min-w-0 flex-grow">
             <div className="flex items-center flex-nowrap space-x-1 justify-start px-1 py-0.5 w-max">
-              <button 
-                id="tab-dashboard"
+              <button
+                id="tab-dashboard-mobile"
                 onClick={() => setSelectedTab('dashboard')}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'dashboard' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <Layers className="h-3.5 w-3.5" />
                 <span className="whitespace-nowrap">Tableau de Bord</span>
               </button>
-              <button 
-                id="tab-inventory"
+              <button
+                id="tab-inventory-mobile"
                 onClick={() => { setSelectedTab('inventory'); setSelectedGem(null); }}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'inventory' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <FileCheck className="h-3.5 w-3.5" />
                 <span className="whitespace-nowrap">Inventaire</span>
               </button>
-              <button 
-                id="tab-purchases"
+              <button
+                id="tab-purchases-mobile"
                 onClick={() => setSelectedTab('purchases')}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'purchases' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <ShoppingBag className="h-3.5 w-3.5 text-emerald-400" />
                 <span className="whitespace-nowrap">Achats & Lots</span>
               </button>
-              <button 
-                id="tab-invoices"
+              <button
+                id="tab-invoices-mobile"
                 onClick={() => setSelectedTab('invoices')}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'invoices' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <Receipt className="h-3.5 w-3.5 text-amber-400" />
                 <span className="whitespace-nowrap">Facturation</span>
               </button>
-              <button 
-                id="tab-contacts"
+              <button
+                id="tab-contacts-mobile"
                 onClick={() => setSelectedTab('contacts')}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'contacts' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <Users className="h-3.5 w-3.5 text-blue-400" />
                 <span className="whitespace-nowrap">Tiers & CSV</span>
               </button>
-              <button 
-                id="tab-identifier"
+              <button
+                id="tab-identifier-mobile"
                 onClick={() => setSelectedTab('identifier')}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'identifier' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <Search className="h-3.5 w-3.5" />
                 <span className="whitespace-nowrap">🔬 Identificateur</span>
               </button>
-              <button 
-                id="tab-certificate"
+              <button
+                id="tab-certificate-mobile"
                 onClick={() => setSelectedTab('certificate')}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'certificate' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <Award className="h-3.5 w-3.5" />
                 <span className="whitespace-nowrap">📜 Certificats</span>
               </button>
-              <button 
-                id="tab-ai"
+              <button
+                id="tab-ai-mobile"
                 onClick={() => setSelectedTab('ai')}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'ai' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <Cpu className="h-3.5 w-3.5 text-amber-500" />
                 <span className="whitespace-nowrap">🤖 Lab Copilot</span>
               </button>
+              <button
+                id="tab-bijoux-mobile"
+                onClick={() => setSelectedTab('bijoux')}
+                className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'bijoux' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
+              >
+                <Sparkles className="h-3.5 w-3.5 text-pink-400" />
+                <span className="whitespace-nowrap">Bijoux</span>
+              </button>
             </div>
           </nav>
 
-          <div className="hidden md:flex items-center shrink-0 select-none gap-2">
-            <button
-              id="tab-settings-desktop"
-              onClick={() => setSelectedTab('settings')}
-              className={`w-9 h-9 rounded-lg transition-all cursor-pointer flex items-center justify-center shrink-0 ${selectedTab === 'settings' ? 'bg-[#bda165] text-black shadow-lg shadow-[#bda165]/20' : 'bg-gray-100 dark:bg-[#171e2c] text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-[#1f283d] border border-gray-200 dark:border-[#27354d]'}`}
-            >
-              <Settings className="h-4 w-4" />
-            </button>
+          <div className="hidden md:flex items-center shrink-0 select-none gap-2 ml-auto">
             <button
               id="theme-toggle"
               onClick={() => setIsDarkMode(!isDarkMode)}
@@ -568,7 +666,16 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20">
+      <div className="flex-grow flex items-start w-full">
+        <Sidebar
+          selectedTab={selectedTab}
+          onSelectTab={setSelectedTab}
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onOpenTrash={handleOpenTrash}
+        />
+
+      <main className="flex-grow min-w-0 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20">
         {selectedTab === 'dashboard' && (
           <Dashboard
             gemstones={gemstones}
@@ -656,7 +763,25 @@ export default function App() {
             onDeletePriceGuideEntry={handleDeletePriceGuideEntry}
           />
         )}
+
+        {selectedTab === 'trash' && (
+          <TrashManager
+            items={trash}
+            onRestore={handleRestoreTrashItem}
+          />
+        )}
+
+        {selectedTab === 'bijoux' && (
+          <BijouManager
+            bijoux={bijoux}
+            gemstones={gemstones}
+            onSaveBijou={handleSaveBijou}
+            onDeleteBijou={handleDeleteBijou}
+            onDecomposeBijou={handleDecomposeBijou}
+          />
+        )}
       </main>
+      </div>
 
       {confirmDialog && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
