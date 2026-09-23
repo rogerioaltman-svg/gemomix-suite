@@ -77,7 +77,9 @@ export default function StockList({
       criteriaClarity: string;
       treatment: string;
       origin: string;
-      certOrDest: string;
+      certificate: string; // pierres : labo + n° ; vide sinon
+      location: string; // pierre : emplacement ; lot : rangement
+      sourceNote?: string; // colis brut : rappel de l'achat d'origine
       cost: number;
       value: number;
       status: string;
@@ -98,7 +100,8 @@ export default function StockList({
         criteriaClarity: g.clarity,
         treatment: g.treatment,
         origin: g.origin,
-        certOrDest: g.certificate.authority !== 'Sans' ? `${g.certificate.authority} (${g.certificate.number})` : 'Interne (Aucun cert.)',
+        certificate: g.certificate.authority !== 'Sans' ? (g.certificate.number ? `${g.certificate.authority} ${g.certificate.number}` : g.certificate.authority) : '',
+        location: g.location || '',
         cost: g.costPrice,
         value: g.sellingPrice,
         status: g.status,
@@ -137,7 +140,8 @@ export default function StockList({
         criteriaClarity: l.averageClarity || 'N/A',
         treatment: 'Colis de Brut trié',
         origin: deducedOrigin,
-        certOrDest: l.destination || 'Lot de tri',
+        certificate: '',
+        location: l.destination || '',
         cost: costPrice,
         value: sellingPrice,
         status: 'Disponible', // default status for sorted materials
@@ -171,7 +175,9 @@ export default function StockList({
               criteriaClarity: 'Inconnue',
               treatment: 'Non traité',
               origin: p.supplier,
-              certOrDest: `Colis global d'achat (${p.reference})`,
+              certificate: '',
+              location: '',
+              sourceNote: `Achat ${p.reference}`,
               cost: costPrice,
               value: sellingPrice,
               status: 'Disponible',
@@ -201,7 +207,8 @@ export default function StockList({
         item.variety.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.certOrDest.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.certificate.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.treatment.toLowerCase().includes(searchTerm.toLowerCase());
 
       // 3. Variety selection filter
@@ -403,18 +410,18 @@ export default function StockList({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-[#171d2b] border-b border-[#212a3d] text-gray-400 text-[11px] font-mono tracking-wider uppercase">
-                <th className="py-3 px-4 whitespace-nowrap">Type</th>
-                <th className="py-3 px-4 whitespace-nowrap">Référence</th>
-                <th className="py-3 px-4 whitespace-nowrap">Variété</th>
-                <th className="py-3 px-4 text-right whitespace-nowrap">Poids (ct)</th>
-                <th className="py-3 px-4 whitespace-nowrap">Taille</th>
-                <th className="py-3 px-4 whitespace-nowrap">Couleur / Pureté</th>
-                <th className="py-3 px-4 whitespace-nowrap">Origine</th>
-                <th className="py-3 px-4 whitespace-nowrap">Certificat / Rangement</th>
-                <th className="py-3 px-4 text-right whitespace-nowrap">Achat</th>
-                <th className="py-3 px-4 text-right whitespace-nowrap">Revente</th>
-                <th className="py-3 px-4 text-center whitespace-nowrap">Statut</th>
-                <th className="py-3 px-4 text-center whitespace-nowrap">Actions</th>
+                <th className="py-3 px-3 whitespace-nowrap">Type</th>
+                <th className="py-3 px-3 whitespace-nowrap">Référence</th>
+                <th className="py-3 px-3 whitespace-nowrap">Variété</th>
+                <th className="py-3 px-3 text-right whitespace-nowrap">Poids (ct)</th>
+                <th className="py-3 px-3 whitespace-nowrap">Taille</th>
+                <th className="py-3 px-3 whitespace-nowrap">Couleur / Pureté</th>
+                <th className="py-3 px-3 whitespace-nowrap">Origine</th>
+                <th className="py-3 px-3 whitespace-nowrap">Certificat</th>
+                <th className="py-3 px-3 whitespace-nowrap">Emplacement</th>
+                <th className="py-3 px-3 text-right whitespace-nowrap">Revente / Achat</th>
+                <th className="py-3 px-3 text-center whitespace-nowrap">Statut</th>
+                <th className="py-3 px-3 text-center whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e2739] text-xs">
@@ -438,7 +445,7 @@ export default function StockList({
                     }}
                   >
                     {/* Item type badge */}
-                    <td className="py-3.5 px-4 font-mono">
+                    <td className="py-3.5 px-3 font-mono">
                       {item.type === 'stone' ? (
                         <span className="px-1.5 py-0.5 bg-[#bda165]/10 text-[#eedfa7] border border-[#bda165]/30 rounded text-[9px] font-bold tracking-wider">
                           PIECE
@@ -455,7 +462,7 @@ export default function StockList({
                     </td>
 
                     {/* Reference & Creation Date */}
-                    <td className="py-3.5 px-4 font-mono">
+                    <td className="py-3.5 px-3 font-mono whitespace-nowrap">
                       <div className="font-semibold text-white flex items-center gap-1">
                         {item.type === 'stone' ? (
                           <Diamond className="h-3 w-3 text-[#bda165] shrink-0" />
@@ -466,11 +473,11 @@ export default function StockList({
                         )}
                         <span>{item.reference}</span>
                       </div>
-                      <span className="text-gray-500 text-[10px] block mt-0.5">{item.date}</span>
+                      <span className="text-gray-500 text-[10px] block mt-0.5">{item.date}{item.sourceNote ? ` · ${item.sourceNote}` : ''}</span>
                     </td>
 
                     {/* Variety display */}
-                    <td className="py-3.5 px-4 font-bold text-gray-100 font-sans">
+                    <td className="py-3.5 px-3 font-bold text-gray-100 font-sans">
                       <div className="flex items-center gap-1.5">
                         <span className={`inline-block w-2.5 h-2.5 rounded-full ${varietyColorDot(item.variety)}`}></span>
                         <span>{item.variety}</span>
@@ -478,64 +485,60 @@ export default function StockList({
                     </td>
 
                     {/* Weight (ct) */}
-                    <td className="py-3.5 px-4 text-right font-mono font-extrabold text-white text-[13px]">
+                    <td className="py-3.5 px-3 text-right font-mono font-extrabold text-white text-[13px]">
                       {item.weight.toFixed(2)} <span className="text-[10px] text-gray-500 font-normal">ct</span>
                     </td>
 
                     {/* Aspect details (Cut or shape description) */}
-                    <td className="py-3.5 px-4 text-gray-300">
+                    <td className="py-3.5 px-3 text-gray-300">
                       {item.details}
                     </td>
 
                     {/* Aspect Criteria / 4Cs */}
-                    <td className="py-3.5 px-4 leading-relaxed">
+                    <td className="py-3.5 px-3 leading-relaxed">
                       <div className="text-gray-300 font-mono text-[11px]">{item.criteriaColor}</div>
                       <div className="text-gray-500 text-[10px] mt-0.5">{item.criteriaClarity !== 'N/A' && `Clarté : ${item.criteriaClarity}`}</div>
                     </td>
 
                     {/* Geographic Origin */}
-                    <td className="py-3.5 px-4">
+                    <td className="py-3.5 px-3">
                       <div className="text-gray-200 font-semibold">{item.origin}</div>
                       <span className="text-amber-500 text-[10px] font-mono">{item.treatment}</span>
                     </td>
 
-                    {/* Certificate of Authority / Safe storage destination */}
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-gray-400">
-                      {item.type === 'stone' ? (
-                        <span className="text-yellow-400 font-bold">{item.certOrDest}</span>
-                      ) : item.type === 'purchase_article' ? (
-                        <span className="text-cyan-400 font-medium italic">💼 {item.certOrDest}</span>
-                      ) : (
-                        <span className="text-emerald-400 font-medium italic">📁 {item.certOrDest}</span>
-                      )}
+                    {/* Certificat (pierres uniquement) */}
+                    <td className="py-3.5 px-3 font-mono text-[11px] whitespace-nowrap">
+                      {item.certificate
+                        ? <span className="text-yellow-400 font-bold">{item.certificate}</span>
+                        : <span className="text-gray-600">—</span>}
                     </td>
 
-                    {/* Buying cost */}
-                    <td className="py-3.5 px-4 text-right font-mono text-gray-400">
-                      {item.cost > 0 ? `${Math.round(item.cost).toLocaleString('fr-FR')} €` : '-'}
+                    {/* Emplacement physique (pierre) / rangement (lot) */}
+                    <td className="py-3.5 px-3 text-[11px] text-gray-300">
+                      {item.location || <span className="text-gray-600">—</span>}
                     </td>
 
-                    {/* Estimated resale value */}
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-[#e0b760]">
+                    {/* Prix : revente estimée (en avant) et coût d'achat en dessous */}
+                    <td className="py-3.5 px-3 text-right font-mono whitespace-nowrap">
                       {item.value > 0 ? (
-                        <div>{Math.round(item.value).toLocaleString('fr-FR')} €</div>
+                        <div className="font-bold text-[#e0b760]">{Math.round(item.value).toLocaleString('fr-FR')} €</div>
                       ) : (
-                        <span className="text-gray-500 italic font-sans font-normal text-[10px]">Non estimée</span>
+                        <div className="text-gray-500 italic font-sans font-normal text-[10px]">Non estimée</div>
                       )}
-                      {(item.type === 'lot' || item.type === 'purchase_article') && item.value > 0 && (
-                        <span className="text-[9px] text-[#eedfa7]/60 font-sans block font-normal">(Est. Marge brute)</span>
-                      )}
+                      <div className="text-[10px] text-gray-500 mt-0.5" title={(item.type === 'lot' || item.type === 'purchase_article') && item.value > 0 ? 'Revente estimée = marge brute estimée' : undefined}>
+                        achat {item.cost > 0 ? `${Math.round(item.cost).toLocaleString('fr-FR')} €` : '—'}
+                      </div>
                     </td>
 
                     {/* Status badges */}
-                    <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium font-sans ${statusBadgeClass(item.status)}`}>
                         {item.status}
                       </span>
                     </td>
 
                     {/* Actions tools */}
-                    <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-2 justify-center items-center">
                         {item.type === 'stone' ? (
                           <>

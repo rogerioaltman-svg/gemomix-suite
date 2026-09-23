@@ -198,6 +198,10 @@ function ensureSourceColumns(conn: Database.Database) {
       ALTER TABLE gemstones ADD COLUMN source_article_id TEXT;
     `);
   }
+  if (!cols.includes('location')) {
+    console.log('[SQLite] Migration : ajout de la colonne location (emplacement)...');
+    conn.exec(`ALTER TABLE gemstones ADD COLUMN location TEXT;`);
+  }
   if (!cols.includes('provenance')) {
     console.log('[SQLite] Migration : ajout de la colonne provenance...');
     conn.exec(`ALTER TABLE gemstones ADD COLUMN provenance TEXT;`);
@@ -409,7 +413,8 @@ function rowToGemstone(r: any): Gemstone {
     recuttings: r.recuttings ? JSON.parse(r.recuttings) : undefined,
     sourcePurchaseId: r.source_purchase_id ?? undefined,
     sourceArticleId: r.source_article_id ?? undefined,
-    provenance: r.provenance ?? undefined
+    provenance: r.provenance ?? undefined,
+    location: r.location ?? undefined
   };
 }
 
@@ -420,13 +425,13 @@ function upsertGemstone(conn: Database.Database, g: Gemstone) {
       dim_length, dim_width, dim_depth, refractive_index, specific_gravity,
       treatment, origin, cert_authority, cert_number,
       cost_price, selling_price, status, dealer, date_added, description,
-      inclusions, image, recuttings, source_purchase_id, source_article_id, provenance
+      inclusions, image, recuttings, source_purchase_id, source_article_id, provenance, location
     ) VALUES (
       @id, @reference, @type, @weight, @cut, @color, @clarity,
       @dimLength, @dimWidth, @dimDepth, @refractiveIndex, @specificGravity,
       @treatment, @origin, @certAuthority, @certNumber,
       @costPrice, @sellingPrice, @status, @dealer, @dateAdded, @description,
-      @inclusions, @image, @recuttings, @sourcePurchaseId, @sourceArticleId, @provenance
+      @inclusions, @image, @recuttings, @sourcePurchaseId, @sourceArticleId, @provenance, @location
     )
   `).run({
     id: g.id,
@@ -456,7 +461,8 @@ function upsertGemstone(conn: Database.Database, g: Gemstone) {
     recuttings: g.recuttings ? JSON.stringify(g.recuttings) : null,
     sourcePurchaseId: g.sourcePurchaseId ?? null,
     sourceArticleId: g.sourceArticleId ?? null,
-    provenance: g.provenance ?? null
+    provenance: g.provenance ?? null,
+    location: g.location?.trim() || null
   });
 }
 

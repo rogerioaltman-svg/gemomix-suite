@@ -63,6 +63,7 @@ export interface Gemstone {
   recuttings?: RecuttingRecord[]; // list of recutting procedures / history
   sourcePurchaseId?: string; // traçabilité : achat d'origine (entrée directe en stock)
   sourceArticleId?: string; // traçabilité : ligne d'article d'origine
+  location?: string; // emplacement physique (coffre, tiroir, confié à...)
   provenance?: string; // 'Achat' (auto), 'Stock initial', 'Transformation d'un lot', 'Autre'
 }
 

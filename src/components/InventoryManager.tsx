@@ -151,6 +151,7 @@ export default function InventoryManager({
   const [selectedTierId, setSelectedTierId] = useState('');
   const [status, setStatus] = useState<'Disponible' | 'Vendu' | 'Réservé' | 'Confié'>('Disponible');
   const [provenance, setProvenance] = useState('Stock initial');
+  const [location, setLocation] = useState('');
   const [dealer, setDealer] = useState('');
   const [description, setDescription] = useState('');
   const [inclusions, setInclusions] = useState<string[]>([]);
@@ -188,6 +189,7 @@ export default function InventoryManager({
       setSelectedTierId('');
       setStatus(selectedGem.status);
       setProvenance(selectedGem.provenance || (selectedGem.sourcePurchaseId ? 'Achat' : 'Stock initial'));
+      setLocation(selectedGem.location || '');
       setDealer(selectedGem.dealer);
       setDescription(selectedGem.description);
       setInclusions(selectedGem.inclusions || []);
@@ -242,6 +244,7 @@ export default function InventoryManager({
     setSelectedTierId('');
     setStatus('Disponible');
     setProvenance('Stock initial');
+    setLocation('');
     setDealer('');
     setDescription('');
     setInclusions([]);
@@ -320,6 +323,7 @@ export default function InventoryManager({
       costPrice: Number(costPrice),
       sellingPrice: Number(sellingPrice),
       status,
+      location: location.trim() || undefined,
       dealer: dealer || 'N/A',
       dateAdded: selectedGem?.dateAdded || new Date().toISOString().split('T')[0],
       description: description || 'Pas de description clinique additionnelle.',
@@ -677,6 +681,19 @@ export default function InventoryManager({
                 <option value="Vendu">Vendu</option>
                 <option value="Confié">Confié</option>
               </select>
+            </div>
+
+            {/* Emplacement physique */}
+            <div>
+              <label className="block text-gray-400 text-xs font-mono mb-1">EMPLACEMENT</label>
+              <input
+                id="gem-location-input"
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="ex: Coffre 2, tiroir B / confié à M. Durand"
+                className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none focus:border-[#b4985c]"
+              />
             </div>
 
             {/* Cost and Appraised margins */}
