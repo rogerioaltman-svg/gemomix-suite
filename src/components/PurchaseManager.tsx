@@ -141,6 +141,7 @@ export default function PurchaseManager({
     setPDate(p.date);
     setPNotes(p.notes || '');
     setSupplierRef(p.supplierReference || '');
+    setNoSupplierInvoice(!!p.noSupplierInvoice);
     setTempArticles(p.articles || []);
     setIsManualSupplier(true);
     setIsAddingPurchase(true);
@@ -167,6 +168,7 @@ export default function PurchaseManager({
   const [pDate, setPDate] = useState(new Date().toISOString().split('T')[0]);
   const [pNotes, setPNotes] = useState('');
   const [supplierRef, setSupplierRef] = useState('');
+  const [noSupplierInvoice, setNoSupplierInvoice] = useState(false);
   const [tempArticles, setTempArticles] = useState<Omit<PurchaseArticle, 'id'>[]>([]);
 
   // States for adding a Single Article inside the temp purchase form
@@ -256,10 +258,12 @@ export default function PurchaseManager({
     const errs: Record<string, string> = {};
     if (!purchaseRef.trim()) errs.purchaseRef = "La référence est requise.";
     if (!supplier.trim()) errs.supplier = "Le fournisseur est requis.";
+    if (!noSupplierInvoice && !supplierRef.trim()) errs.supplierRef = "Le n° de facture fournisseur est requis (ou cochez « Achat sans facture fournisseur »).";
     if (tempArticles.length === 0) errs.articles = "Ajoutez au moins un article d'achat avant d'enregistrer.";
     if (Object.keys(errs).length > 0) {
       showErrors(errs, errs.purchaseRef ? 'pur-ref'
         : errs.supplier ? (isManualSupplier ? 'pur-supplier' : 'pur-supplier-select')
+        : errs.supplierRef ? 'pur-supplier-ref'
         : 'art-name-input');
       return;
     }
@@ -268,7 +272,8 @@ export default function PurchaseManager({
     const newPurchase: Purchase = {
       id: editingPurchaseId || ('pur-' + Date.now()),
       reference: purchaseRef.trim(),
-      supplierReference: supplierRef.trim() || undefined,
+      supplierReference: noSupplierInvoice ? undefined : (supplierRef.trim() || undefined),
+      noSupplierInvoice,
       supplier: supplier.trim(),
       date: pDate,
       status: 'En cours',
@@ -284,6 +289,7 @@ export default function PurchaseManager({
 
     // Reset state
     setSupplierRef('');
+    setNoSupplierInvoice(false);
     setPurchaseRef('');
     setSupplier('');
     setPNotes('');
@@ -442,6 +448,8 @@ export default function PurchaseManager({
               setPurchaseRef('…'); // Numéro en cours d'attribution
               setSupplier('');
               setSupplierRef('');
+              setNoSupplierInvoice(false);
+    setNoSupplierInvoice(false);
               setPNotes('');
               setTempArticles([]);
               try {
@@ -894,6 +902,9 @@ export default function PurchaseManager({
                 setPurchaseRef('');
                 setSupplier('');
                 setSupplierRef('');
+              setNoSupplierInvoice(false);
+                setNoSupplierInvoice(false);
+    setNoSupplierInvoice(false);
                 setPNotes('');
                 setTempArticles([]);
                 setFormErrors({});
@@ -919,16 +930,28 @@ export default function PurchaseManager({
                 className={`w-full px-3 py-2 bg-[#12161f] border ${errorBorder('purchaseRef')} text-gray-300 rounded cursor-not-allowed`}
               />
               <FieldError field="purchaseRef" />
-              <label className="block text-gray-300 mt-3">N° Facture Fournisseur</label>
+              <label className="block text-gray-300 mt-3">N° Facture Fournisseur {!noSupplierInvoice && <span className="text-red-400">*</span>}</label>
               <input
                 id="pur-supplier-ref"
                 type="text"
                 value={supplierRef}
-                onChange={(e) => setSupplierRef(e.target.value)}
-                placeholder="N° d'origine (optionnel)"
+                disabled={noSupplierInvoice}
+                onChange={(e) => { setSupplierRef(e.target.value); clearError('supplierRef'); }}
+                placeholder={noSupplierInvoice ? "Sans facture fournisseur" : "N° figurant sur la facture d'origine"}
                 title="Numéro figurant sur la facture émise par le fournisseur"
-                className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded focus:border-[#b4985c] normal-case"
+                className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplierRef')} text-white rounded focus:border-[#b4985c] normal-case disabled:opacity-50 disabled:cursor-not-allowed`}
               />
+              <FieldError field="supplierRef" />
+              <label className="flex items-center gap-1.5 mt-1 normal-case text-[11px] text-gray-400 cursor-pointer">
+                <input
+                  id="pur-no-supplier-invoice"
+                  type="checkbox"
+                  checked={noSupplierInvoice}
+                  onChange={(e) => { setNoSupplierInvoice(e.target.checked); if (e.target.checked) { setSupplierRef(''); clearError('supplierRef'); } }}
+                  className="accent-[#bda165]"
+                />
+                Achat sans facture fournisseur
+              </label>
             </div>
             <div className="space-y-1 font-mono uppercase col-span-2">
               <div className="flex justify-between items-center mb-0.5">
@@ -1172,6 +1195,9 @@ export default function PurchaseManager({
                 setPurchaseRef('');
                 setSupplier('');
                 setSupplierRef('');
+              setNoSupplierInvoice(false);
+                setNoSupplierInvoice(false);
+    setNoSupplierInvoice(false);
                 setPNotes('');
                 setTempArticles([]);
                 setFormErrors({});

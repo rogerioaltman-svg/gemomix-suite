@@ -219,6 +219,10 @@ function ensureSupplierReferenceColumn(conn: Database.Database) {
     console.log('[SQLite] Migration : ajout de supplier_reference sur purchases...');
     conn.exec(`ALTER TABLE purchases ADD COLUMN supplier_reference TEXT;`);
   }
+  if (!cols.includes('no_supplier_invoice')) {
+    console.log('[SQLite] Migration : ajout de no_supplier_invoice sur purchases...');
+    conn.exec(`ALTER TABLE purchases ADD COLUMN no_supplier_invoice INTEGER NOT NULL DEFAULT 0;`);
+  }
 }
 
 function ensureDeletedAtColumns(conn: Database.Database) {
@@ -461,6 +465,7 @@ function rowToPurchase(r: any): Purchase {
     id: r.id,
     reference: r.reference,
     supplierReference: r.supplier_reference ?? undefined,
+    noSupplierInvoice: !!r.no_supplier_invoice,
     supplier: r.supplier ?? '',
     date: r.date,
     status: r.status,
@@ -474,11 +479,12 @@ function upsertPurchase(conn: Database.Database, p: Purchase) {
   // ON CONFLICT DO UPDATE (et non INSERT OR REPLACE, qui supprime puis réinsère
   // la ligne et déclencherait la cascade de suppression des lots de tri liés)
   conn.prepare(`
-    INSERT INTO purchases (id, reference, supplier_reference, supplier, date, status, total_cost, articles, notes)
-    VALUES (@id, @reference, @supplierReference, @supplier, @date, @status, @totalCost, @articles, @notes)
+    INSERT INTO purchases (id, reference, supplier_reference, no_supplier_invoice, supplier, date, status, total_cost, articles, notes)
+    VALUES (@id, @reference, @supplierReference, @noSupplierInvoice, @supplier, @date, @status, @totalCost, @articles, @notes)
     ON CONFLICT(id) DO UPDATE SET
       reference = excluded.reference,
       supplier_reference = excluded.supplier_reference,
+      no_supplier_invoice = excluded.no_supplier_invoice,
       supplier = excluded.supplier,
       date = excluded.date,
       status = excluded.status,
@@ -488,7 +494,8 @@ function upsertPurchase(conn: Database.Database, p: Purchase) {
   `).run({
     id: p.id,
     reference: p.reference,
-    supplierReference: p.supplierReference?.trim() || null,
+    supplierReference: p.noSupplierInvoice ? null : (p.supplierReference?.trim() || null),
+    noSupplierInvoice: p.noSupplierInvoice ? 1 : 0,
     supplier: p.supplier ?? '',
     date: p.date ?? new Date().toISOString(),
     status: p.status ?? 'Incomplet',

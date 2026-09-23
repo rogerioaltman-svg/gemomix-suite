@@ -113,7 +113,8 @@ export interface PurchaseArticle {
 export interface Purchase {
   id: string;
   reference: string; // numéro interne séquentiel (verrouillé) — racine des refs lots/pierres
-  supplierReference?: string; // n° de la facture d'origine du fournisseur (saisie libre)
+  supplierReference?: string; // n° de la facture d'origine du fournisseur (obligatoire sauf exception)
+  noSupplierInvoice?: boolean; // achat sans facture fournisseur (particulier, comptant...) : lève l'obligation
   supplier: string;
   date: string;
   status: 'Incomplet' | 'Trié' | 'En cours';
