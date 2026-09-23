@@ -403,18 +403,18 @@ export default function StockList({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-[#171d2b] border-b border-[#212a3d] text-gray-400 text-[11px] font-mono tracking-wider uppercase">
-                <th className="py-3 px-4">Origine / Cat.</th>
-                <th className="py-3 px-4">Référence</th>
-                <th className="py-3 px-4">Variété minérale</th>
-                <th className="py-3 px-4 text-right">Poids (ct)</th>
-                <th className="py-3 px-4">Taille / Forme</th>
-                <th className="py-3 px-4">Aspect (4Cs) & Note</th>
-                <th className="py-3 px-4">Origine & Transit</th>
-                <th className="py-3 px-4">Certificat / Destination</th>
-                <th className="py-3 px-4 text-right">Achat Est.</th>
-                <th className="py-3 px-4 text-right">Estimation Revente</th>
-                <th className="py-3 px-4 text-center">Statut</th>
-                <th className="py-3 px-4 text-center">Actions</th>
+                <th className="py-3 px-4 whitespace-nowrap">Type</th>
+                <th className="py-3 px-4 whitespace-nowrap">Référence</th>
+                <th className="py-3 px-4 whitespace-nowrap">Variété</th>
+                <th className="py-3 px-4 text-right whitespace-nowrap">Poids (ct)</th>
+                <th className="py-3 px-4 whitespace-nowrap">Taille</th>
+                <th className="py-3 px-4 whitespace-nowrap">Couleur / Pureté</th>
+                <th className="py-3 px-4 whitespace-nowrap">Origine</th>
+                <th className="py-3 px-4 whitespace-nowrap">Certificat / Dest.</th>
+                <th className="py-3 px-4 text-right whitespace-nowrap">Achat</th>
+                <th className="py-3 px-4 text-right whitespace-nowrap">Revente</th>
+                <th className="py-3 px-4 text-center whitespace-nowrap">Statut</th>
+                <th className="py-3 px-4 text-center whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1e2739] text-xs">
