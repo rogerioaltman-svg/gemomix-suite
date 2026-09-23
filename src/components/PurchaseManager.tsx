@@ -302,6 +302,18 @@ export default function PurchaseManager({
     const errs: Record<string, string> = {};
     if (!lotRef.trim() || lotRef === '…') errs.lotRef = "La référence n'a pas pu être générée. Réessayez d'ouvrir le tri.";
     if (weightNum <= 0) errs.lotWeight = "Le poids du lot doit être supérieur à 0 ct.";
+    else {
+      // Blocage strict : le total trié ne peut pas dépasser le poids acheté du colis
+      const otherLotsWeight = articleLots
+        .filter(l => l.id !== editingLotId)
+        .reduce((sum, l) => sum + l.weight, 0);
+      const available = Number((activeTriageArticle.article.weight - otherLotsWeight).toFixed(2));
+      if (weightNum > available + 0.0001) {
+        errs.lotWeight = available > 0
+          ? `Dépassement : il ne reste que ${available} ct à trier sur ce colis (${activeTriageArticle.article.weight} ct achetés).`
+          : `Ce colis est entièrement trié (${activeTriageArticle.article.weight} ct) : aucun poids disponible.`;
+      }
+    }
     if (Object.keys(errs).length > 0) {
       showErrors(errs, errs.lotRef ? 'lot-ref-input' : 'lot-weight-input');
       return;
@@ -484,7 +496,7 @@ export default function PurchaseManager({
               <span className="text-[10px] uppercase tracking-wider text-[#b4985c] font-mono font-bold block">COLIS DE DÉPART</span>
               <h3 className="text-base font-bold text-white truncate mt-0.5">{activeTriageArticle.article.name}</h3>
               <div className="mt-1 flex items-center gap-2 flex-wrap">
-                <span className="text-xs bg-[#1a2333] text-sky-400 px-2 py-0.5 rounded-full font-semibold">
+                <span className="text-xs bg-sky-500/10 text-sky-400 border border-sky-500/25 px-2 py-0.5 rounded-full font-semibold">
                   {activeTriageArticle.article.gemstoneType}
                 </span>
                 <span className="text-[11px] text-gray-400 font-mono">

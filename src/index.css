@@ -46,6 +46,7 @@ body:has(.light-theme) {
 .light-theme [class*="bg-[#181f2d]"],
 .light-theme [class*="bg-[#121824]"],
 .light-theme [class*="bg-[#161c29]"],
+.light-theme [class*="bg-[#12161f]"],
 .light-theme .bg-\[\#121824\],
 .light-theme .bg-\[\#171d2b\] {
   background-color: #f1f5f9 !important;
