@@ -253,7 +253,7 @@ export default function PhotoCapture({ value, onChange, onClear, label = "Photo 
       ) : (
         /* 3. COOLDOWN DISPLAY (NO PICTURE DEFINED YET) */
         <div className="rounded-xl border-2 border-dashed border-[#2b3a57] bg-[#111624] p-5 text-center flex flex-col items-center justify-center h-48 group">
-          <div className="h-10 w-10 bg-[#162135] text-[#bda165] border border-[#2b3a57] rounded-full flex items-center justify-center mb-2.5 transition-transform group-hover:scale-110">
+          <div className="h-10 w-10 bg-[#bda165]/10 text-[#bda165] border border-[#bda165]/30 rounded-full flex items-center justify-center mb-2.5 transition-transform group-hover:scale-110">
             <Camera className="h-5 w-5" />
           </div>
           
@@ -263,7 +263,7 @@ export default function PhotoCapture({ value, onChange, onClear, label = "Photo 
             <button
               type="button"
               onClick={() => setIsCapturing(true)}
-              className="px-3 py-1.5 bg-[#1a2538] hover:bg-[#25344f] text-yellow-500 border border-[#273955] rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-yellow-500 border border-amber-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-colors"
             >
               <Camera className="h-3.5 w-3.5" />
               <span>Lancer Appareil Photo</span>
@@ -272,7 +272,7 @@ export default function PhotoCapture({ value, onChange, onClear, label = "Photo 
             <button
               type="button"
               onClick={triggerFileInput}
-              className="px-3 py-1.5 bg-[#0f1d18] hover:bg-[#152e25] text-emerald-400 border border-emerald-500/10 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-colors"
             >
               <Upload className="h-3.5 w-3.5" />
               <span>Parcourir / Fichier</span>
