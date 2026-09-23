@@ -17,6 +17,7 @@ import SalesManager from './components/SalesManager';
 import TrashManager from './components/TrashManager';
 import BijouManager from './components/BijouManager';
 import Sidebar from './components/Sidebar';
+import StockList from './components/StockList';
 import { normalizeGemstone } from "./utils/normalizeGemstone";
 
 import {
@@ -53,6 +54,22 @@ export default function App() {
   
   const [selectedTab, setSelectedTab] = useState<string>('dashboard');
   const [selectedGem, setSelectedGem] = useState<Gemstone | null>(null);
+  // Onglet Inventaire : 'list' = liste du stock, 'form' = fiche pierre (création/édition)
+  const [inventoryMode, setInventoryMode] = useState<'list' | 'form'>('list');
+
+  const openGemForm = (gem: Gemstone | null) => {
+    setSelectedGem(gem);
+    setInventoryMode('form');
+    setSelectedTab('inventory');
+  };
+
+  const handleSelectTab = (tab: string) => {
+    if (tab === 'inventory') {
+      setSelectedGem(null);
+      setInventoryMode('list');
+    }
+    setSelectedTab(tab);
+  };
   const [selectedCertGemRef, setSelectedCertGemRef] = useState<string>(''); // Remplplace l'ancien helper DOM défaillant
   
   // Custom light/dark mode state
@@ -395,7 +412,8 @@ export default function App() {
     
     setGemstones(updatedList);
     setSelectedGem(null);
-    setSelectedTab('dashboard');
+    setInventoryMode('list');
+    setSelectedTab('inventory');
   };
 
   // Inline update for specific nested operations (e.g. recuttings)
@@ -434,7 +452,8 @@ export default function App() {
         setGemstones(updatedList);
         if (selectedGem?.id === id) {
           setSelectedGem(null);
-          setSelectedTab('dashboard');
+          setInventoryMode('list');
+          setSelectedTab('inventory');
         }
         setConfirmDialog(null);
       }
@@ -588,7 +607,7 @@ export default function App() {
               </button>
               <button
                 id="tab-inventory-mobile"
-                onClick={() => { setSelectedTab('inventory'); setSelectedGem(null); }}
+                onClick={() => handleSelectTab('inventory')}
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'inventory' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <FileCheck className="h-3.5 w-3.5" />
@@ -669,7 +688,7 @@ export default function App() {
       <div className="flex-grow flex items-start w-full">
         <Sidebar
           selectedTab={selectedTab}
-          onSelectTab={setSelectedTab}
+          onSelectTab={handleSelectTab}
           collapsed={sidebarCollapsed}
           onToggleCollapsed={() => setSidebarCollapsed(!sidebarCollapsed)}
           onOpenTrash={handleOpenTrash}
@@ -681,14 +700,33 @@ export default function App() {
             gemstones={gemstones}
             lots={lots}
             purchases={purchases}
-            onSelectGem={(gem) => { setSelectedGem(gem); setSelectedTab('inventory'); }}
+            onNavigateToTab={setSelectedTab}
+            onNewGem={() => openGemForm(null)}
+          />
+        )}
+
+        {selectedTab === 'inventory' && inventoryMode === 'list' && (
+          <StockList
+            gemstones={gemstones}
+            lots={lots}
+            purchases={purchases}
+            onSelectGem={(gem) => openGemForm(gem)}
+            onNewGem={() => openGemForm(null)}
             onNavigateToTab={setSelectedTab}
             onDeleteGem={handleDeleteGemstone}
             onDeleteLot={handleDeleteLot}
           />
         )}
 
-        {selectedTab === 'inventory' && (
+        {selectedTab === 'inventory' && inventoryMode === 'form' && (
+          <div>
+            <button
+              id="btn-back-to-inventory"
+              onClick={() => { setSelectedGem(null); setInventoryMode('list'); }}
+              className="mb-4 px-3 py-1.5 text-xs font-mono font-bold text-gray-300 hover:text-white bg-[#1b2333] hover:bg-[#202a3c] border border-gray-800 rounded-lg transition-all"
+            >
+              ← Retour à l'inventaire
+            </button>
           <InventoryManager
             gemstones={gemstones}
             selectedGem={selectedGem}
@@ -703,6 +741,7 @@ export default function App() {
               setSelectedTab('certificate');
             }}
           />
+          </div>
         )}
 
         {selectedTab === 'purchases' && (
