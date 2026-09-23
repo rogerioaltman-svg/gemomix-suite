@@ -410,7 +410,7 @@ export default function StockList({
                 <th className="py-3 px-4 whitespace-nowrap">Taille</th>
                 <th className="py-3 px-4 whitespace-nowrap">Couleur / Pureté</th>
                 <th className="py-3 px-4 whitespace-nowrap">Origine</th>
-                <th className="py-3 px-4 whitespace-nowrap">Certificat / Dest.</th>
+                <th className="py-3 px-4 whitespace-nowrap">Certificat / Rangement</th>
                 <th className="py-3 px-4 text-right whitespace-nowrap">Achat</th>
                 <th className="py-3 px-4 text-right whitespace-nowrap">Revente</th>
                 <th className="py-3 px-4 text-center whitespace-nowrap">Statut</th>
