@@ -112,7 +112,8 @@ export interface PurchaseArticle {
 
 export interface Purchase {
   id: string;
-  reference: string; // e.g. "ACH-2026-001"
+  reference: string; // numéro interne séquentiel (verrouillé) — racine des refs lots/pierres
+  supplierReference?: string; // n° de la facture d'origine du fournisseur (saisie libre)
   supplier: string;
   date: string;
   status: 'Incomplet' | 'Trié' | 'En cours';

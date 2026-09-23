@@ -140,6 +140,7 @@ export default function PurchaseManager({
     setSupplier(p.supplier);
     setPDate(p.date);
     setPNotes(p.notes || '');
+    setSupplierRef(p.supplierReference || '');
     setTempArticles(p.articles || []);
     setIsManualSupplier(true);
     setIsAddingPurchase(true);
@@ -165,6 +166,7 @@ export default function PurchaseManager({
 
   const [pDate, setPDate] = useState(new Date().toISOString().split('T')[0]);
   const [pNotes, setPNotes] = useState('');
+  const [supplierRef, setSupplierRef] = useState('');
   const [tempArticles, setTempArticles] = useState<Omit<PurchaseArticle, 'id'>[]>([]);
 
   // States for adding a Single Article inside the temp purchase form
@@ -266,6 +268,7 @@ export default function PurchaseManager({
     const newPurchase: Purchase = {
       id: editingPurchaseId || ('pur-' + Date.now()),
       reference: purchaseRef.trim(),
+      supplierReference: supplierRef.trim() || undefined,
       supplier: supplier.trim(),
       date: pDate,
       status: 'En cours',
@@ -280,6 +283,7 @@ export default function PurchaseManager({
     onSavePurchase(newPurchase);
 
     // Reset state
+    setSupplierRef('');
     setPurchaseRef('');
     setSupplier('');
     setPNotes('');
@@ -425,6 +429,7 @@ export default function PurchaseManager({
               setEditingPurchaseId(null);
               setPurchaseRef('…'); // Numéro en cours d'attribution
               setSupplier('');
+              setSupplierRef('');
               setPNotes('');
               setTempArticles([]);
               try {
@@ -876,6 +881,7 @@ export default function PurchaseManager({
                 setEditingPurchaseId(null);
                 setPurchaseRef('');
                 setSupplier('');
+                setSupplierRef('');
                 setPNotes('');
                 setTempArticles([]);
                 setFormErrors({});
@@ -901,6 +907,16 @@ export default function PurchaseManager({
                 className={`w-full px-3 py-2 bg-[#12161f] border ${errorBorder('purchaseRef')} text-gray-300 rounded cursor-not-allowed`}
               />
               <FieldError field="purchaseRef" />
+              <label className="block text-gray-300 mt-3">N° Facture Fournisseur</label>
+              <input
+                id="pur-supplier-ref"
+                type="text"
+                value={supplierRef}
+                onChange={(e) => setSupplierRef(e.target.value)}
+                placeholder="N° d'origine (optionnel)"
+                title="Numéro figurant sur la facture émise par le fournisseur"
+                className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded focus:border-[#b4985c] normal-case"
+              />
             </div>
             <div className="space-y-1 font-mono uppercase col-span-2">
               <div className="flex justify-between items-center mb-0.5">
@@ -1143,6 +1159,7 @@ export default function PurchaseManager({
                 setEditingPurchaseId(null);
                 setPurchaseRef('');
                 setSupplier('');
+                setSupplierRef('');
                 setPNotes('');
                 setTempArticles([]);
                 setFormErrors({});
@@ -1199,6 +1216,11 @@ export default function PurchaseManager({
                           {purchase.reference}
                         </span>
                         <h4 className="font-bold text-white text-sm">{purchase.supplier}</h4>
+                        {purchase.supplierReference && (
+                          <span className="text-[10px] text-gray-400 font-mono" title="N° de facture du fournisseur">
+                            Fact. fourn. {purchase.supplierReference}
+                          </span>
+                        )}
                         <span className="text-xs text-gray-400 flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
                           {purchase.date}

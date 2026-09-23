@@ -179,6 +179,7 @@ function getConnection(): Database.Database {
   ensureForeignKeys(db);
   ensureSourceColumns(db);
   ensureDeletedAtColumns(db);
+  ensureSupplierReferenceColumn(db);
   bootstrapIfEmpty(db);
 
   // Migration terminologie : 'Consignation' -> 'Confié' (terme du négoce). Idempotent.
@@ -211,6 +212,14 @@ function ensureSourceColumns(conn: Database.Database) {
 // jamais (on ne fait plus de vraie suppression SQL) : le comportement équivalent
 // est désormais reproduit manuellement dans deletePurchase (cascade vers lots).
 const TABLES_WITH_SOFT_DELETE = ['gemstones', 'purchases', 'lots', 'suppliers', 'clients', 'sales_invoices', 'price_guide', 'bijoux'];
+
+function ensureSupplierReferenceColumn(conn: Database.Database) {
+  const cols = (conn.pragma('table_info(purchases)') as any[]).map(c => c.name);
+  if (!cols.includes('supplier_reference')) {
+    console.log('[SQLite] Migration : ajout de supplier_reference sur purchases...');
+    conn.exec(`ALTER TABLE purchases ADD COLUMN supplier_reference TEXT;`);
+  }
+}
 
 function ensureDeletedAtColumns(conn: Database.Database) {
   for (const table of TABLES_WITH_SOFT_DELETE) {
@@ -451,6 +460,7 @@ function rowToPurchase(r: any): Purchase {
   return {
     id: r.id,
     reference: r.reference,
+    supplierReference: r.supplier_reference ?? undefined,
     supplier: r.supplier ?? '',
     date: r.date,
     status: r.status,
@@ -464,10 +474,11 @@ function upsertPurchase(conn: Database.Database, p: Purchase) {
   // ON CONFLICT DO UPDATE (et non INSERT OR REPLACE, qui supprime puis réinsère
   // la ligne et déclencherait la cascade de suppression des lots de tri liés)
   conn.prepare(`
-    INSERT INTO purchases (id, reference, supplier, date, status, total_cost, articles, notes)
-    VALUES (@id, @reference, @supplier, @date, @status, @totalCost, @articles, @notes)
+    INSERT INTO purchases (id, reference, supplier_reference, supplier, date, status, total_cost, articles, notes)
+    VALUES (@id, @reference, @supplierReference, @supplier, @date, @status, @totalCost, @articles, @notes)
     ON CONFLICT(id) DO UPDATE SET
       reference = excluded.reference,
+      supplier_reference = excluded.supplier_reference,
       supplier = excluded.supplier,
       date = excluded.date,
       status = excluded.status,
@@ -477,6 +488,7 @@ function upsertPurchase(conn: Database.Database, p: Purchase) {
   `).run({
     id: p.id,
     reference: p.reference,
+    supplierReference: p.supplierReference?.trim() || null,
     supplier: p.supplier ?? '',
     date: p.date ?? new Date().toISOString(),
     status: p.status ?? 'Incomplet',

@@ -10,14 +10,16 @@ import {
   Check, 
   ArrowLeft, 
   Calendar, 
-  DollarSign, 
-  Briefcase, 
-  ChevronRight, 
-  Percent, 
-  User, 
-  Coins, 
+  Euro,
+  Briefcase,
+  ChevronRight,
+  Percent,
+  User,
+  Coins,
   AlertCircle,
-  Pen
+  Pen,
+  UserPlus,
+  X
 } from 'lucide-react';
 
 interface SalesManagerProps {
@@ -28,6 +30,7 @@ interface SalesManagerProps {
   onSaveInvoice: (inv: SalesInvoice) => Promise<void> | void;
   onDeleteInvoice: (id: string) => Promise<void> | void;
   onRefreshGemstones: () => Promise<void> | void; // to reload status changes
+  onSaveClient: (c: Client) => Promise<void> | void;
 }
 
 export default function SalesManager({
@@ -37,11 +40,38 @@ export default function SalesManager({
   companySettings,
   onSaveInvoice,
   onDeleteInvoice,
-  onRefreshGemstones
+  onRefreshGemstones,
+  onSaveClient
 }: SalesManagerProps) {
   const [viewMode, setViewMode] = useState<'list' | 'create' | 'view' | 'edit'>('list');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
+
+  // Création rapide d'un client sans quitter la facturation (évite l'aller-retour
+  // vers l'onglet Tiers & CSV pour un cas d'usage fréquent : nouveau client venu
+  // acheter directement)
+  const [isQuickClientModalOpen, setIsQuickClientModalOpen] = useState(false);
+  const [quickClientName, setQuickClientName] = useState('');
+  const [quickClientEmail, setQuickClientEmail] = useState('');
+  const [quickClientPhone, setQuickClientPhone] = useState('');
+
+  const handleQuickCreateClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickClientName.trim()) return;
+    const newClient: Client = {
+      id: `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: quickClientName.trim(),
+      email: quickClientEmail.trim() || undefined,
+      phone: quickClientPhone.trim() || undefined,
+      dateAdded: new Date().toISOString()
+    };
+    await onSaveClient(newClient);
+    setInvoiceForm(prev => ({ ...prev, clientId: newClient.id }));
+    setQuickClientName('');
+    setQuickClientEmail('');
+    setQuickClientPhone('');
+    setIsQuickClientModalOpen(false);
+  };
 
   // Available (Disponible) gemstones for invoicing
   const availableGemstones = gemstones.filter(g => g.status === 'Disponible');
@@ -450,17 +480,28 @@ export default function SalesManager({
 
                 <div>
                   <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">CLIENT BÉNÉFICIAIRE *</label>
-                  <select
-                    required
-                    value={invoiceForm.clientId}
-                    onChange={(e) => setInvoiceForm({...invoiceForm, clientId: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                  >
-                    <option value="">-- Sélectionner un client --</option>
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.city})</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2">
+                    <select
+                      required
+                      value={invoiceForm.clientId}
+                      onChange={(e) => setInvoiceForm({...invoiceForm, clientId: e.target.value})}
+                      className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
+                    >
+                      <option value="">-- Sélectionner un client --</option>
+                      {clients.map(c => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.city})</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      id="quick-new-client-button"
+                      onClick={() => setIsQuickClientModalOpen(true)}
+                      title="Nouveau client"
+                      className="shrink-0 px-3 py-2 bg-[#171e2c] hover:bg-[#1f283d] border border-[#27354d] text-[#bda165] rounded-lg transition-colors"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -540,7 +581,7 @@ export default function SalesManager({
                       onChange={(e) => handleGemstoneSelectionChange(e.target.value)}
                       className="w-full px-2 py-1.5 bg-[#171e2c] border border-gray-800 rounded font-bold text-[#bda165] focus:outline-none"
                     >
-                      <option value="">-- Pierre libre textuelle (Saisie libre) --</option>
+                      <option value="">-- Aucune pierre liée (saisir l'article manuellement ci-dessous) --</option>
                       {availableGemstones.map(g => (
                         <option key={g.id} value={g.id}>
                           {g.reference} · {g.type} · {g.weight} cts · {g.origin} · {g.sellingPrice ? `${g.sellingPrice} €` : 'Prix libre'}
@@ -714,7 +755,7 @@ export default function SalesManager({
                   <div className="space-y-1 bg-gray-900/30 p-2.5 rounded border border-gray-800">
                     <label className="block text-[10px] text-gray-500 font-sans font-bold">REMISE EXCEPTIONNELLE (€ HT)</label>
                     <div className="relative">
-                      <DollarSign className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-gray-500" />
+                      <Euro className="absolute left-2.5 top-1.5 h-3.5 w-3.5 text-gray-500" />
                       <input
                         type="number"
                         min="0"
@@ -978,6 +1019,63 @@ export default function SalesManager({
             </div>
 
           </div>
+        </div>
+      )}
+
+      {isQuickClientModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+          <form
+            onSubmit={handleQuickCreateClient}
+            className="bg-[#121622] border border-[#232f48] rounded-xl max-w-sm w-full p-6 space-y-4 shadow-2xl relative"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white font-sans flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-[#bda165]" /> Nouveau client
+              </h3>
+              <button type="button" onClick={() => setIsQuickClientModalOpen(false)} className="text-gray-500 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500 -mt-2">
+              Création rapide. Les autres coordonnées (adresse, SIRET...) restent modifiables ensuite depuis "Tiers & CSV".
+            </p>
+            <div>
+              <label className="text-[11px] text-gray-400 block mb-1">Nom / Raison sociale *</label>
+              <input
+                id="quick-client-name-input"
+                required
+                autoFocus
+                value={quickClientName}
+                onChange={e => setQuickClientName(e.target.value)}
+                className="w-full bg-[#0f1420] border border-[#27354d] rounded-lg px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-gray-400 block mb-1">Email</label>
+              <input
+                type="email"
+                value={quickClientEmail}
+                onChange={e => setQuickClientEmail(e.target.value)}
+                className="w-full bg-[#0f1420] border border-[#27354d] rounded-lg px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] text-gray-400 block mb-1">Téléphone</label>
+              <input
+                value={quickClientPhone}
+                onChange={e => setQuickClientPhone(e.target.value)}
+                className="w-full bg-[#0f1420] border border-[#27354d] rounded-lg px-3 py-2 text-sm text-white"
+              />
+            </div>
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button type="button" onClick={() => setIsQuickClientModalOpen(false)} className="px-4 py-2 bg-[#1b2333] hover:bg-[#202a3c] text-xs font-semibold text-gray-400 hover:text-white rounded-lg border border-gray-800 transition">
+                Annuler
+              </button>
+              <button type="submit" className="px-4 py-2 bg-[#bda165] hover:bg-[#cdb47a] text-xs font-bold text-black rounded-lg flex items-center gap-1.5 transition">
+                <Check className="h-3.5 w-3.5" /> Créer et sélectionner
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

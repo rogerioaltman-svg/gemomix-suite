@@ -740,6 +740,7 @@ export default function App() {
             onSaveInvoice={handleSaveInvoice}
             onDeleteInvoice={handleDeleteInvoice}
             onRefreshGemstones={handleRefreshGemstones}
+            onSaveClient={handleSaveClient}
           />
         )}
 
