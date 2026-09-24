@@ -17,6 +17,7 @@ Règles de conversion (stock Access = table LOT) :
 
 Usage :
   python scripts/import_access_stock.py export [--mdb C:\\Access\\Data\\Data.mdb] [--include-classes]
+  python scripts/import_access_stock.py csv    [--mdb ...]   (liste d'analyse pour Excel)
   python scripts/import_access_stock.py load   [--url http://localhost:3000] [--dry-run]
 """
 import argparse, collections, datetime, json, os, re, shutil, sys, tempfile, unicodedata, urllib.request, urllib.error
@@ -141,6 +142,63 @@ def export(args):
     print('\nFichier écrit : %s' % OUT_FILE)
 
 
+def csv_export(args):
+    """CSV d'analyse (Excel français : séparateur « ; », virgule décimale, UTF-8 avec BOM)."""
+    import csv, pyodbc
+    if not os.path.isfile(args.mdb):
+        sys.exit('Fichier introuvable : %s' % args.mdb)
+    tmp = os.path.join(tempfile.gettempdir(), 'gemomix_import_data_copy.mdb')
+    shutil.copyfile(args.mdb, tmp)
+    cur = pyodbc.connect('DRIVER=%s;DBQ=%s;ReadOnly=1;' % (DRIVER, tmp)).cursor()
+    cur.execute("""SELECT FLAG, REFERENCE, GROSSEUR, TAILLE, POIDSINIT, POIDS, PRIXACH, PRIXVENTE,
+                          FOURNISSEUR, NOPIECE, DATACH, DATECLASSEMENT, POSITION
+                   FROM LOT WHERE POIDS > 0.001 AND FLAG IN ('N','C') ORDER BY FLAG, REFERENCE""")
+    fr = lambda x, nd=2: ('%.*f' % (nd, x)).replace('.', ',') if x is not None else ''
+    d = lambda x: x.strftime('%d/%m/%Y') if x else ''
+    header = ['Statut Access', 'Référence', 'Catégorie Access', 'Variété GemoMix', 'Précision', 'Taille',
+              'Poids origine (ct)', 'Poids restant (ct)', 'Prix achat /ct (EUR)', 'Prix vente /ct (EUR)',
+              'Coût restant (EUR)', 'Valeur vente restante (EUR)', 'Fournisseur', 'N° achat interne',
+              'Date achat', 'Date classement', 'Position', 'Observations', 'Décision (à remplir)']
+    out_rows, counts = [], collections.Counter()
+    for (flag, ref, gros, taille, pinit, poids, pach, pvte, fourn, nopiece, datach, dclass, position) in cur.fetchall():
+        vtype, vcol = normalize_variety(gros)
+        obs = []
+        if flag == 'C':
+            if poids <= 0.1:
+                obs.append("Résidu d'arrondi (<= 0,1 ct) : lot soldé en pratique")
+            else:
+                obs.append('A VERIFIER : lot classé mais poids restant significatif')
+            if not dclass:
+                obs.append('classé sans date de classement')
+        else:
+            if pinit and poids < pinit - 0.005:
+                obs.append('Vendu en partie')
+            if not pvte:
+                obs.append('Sans prix de vente')
+            if not (taille or '').strip():
+                obs.append('Sans taille')
+        if pinit is not None and poids > pinit + 0.005:
+            obs.append("ANOMALIE : poids restant > poids d'origine")
+        status = 'Actif (non classé)' if flag == 'N' else 'Classé avec poids'
+        counts[status] += 1
+        out_rows.append([status, (ref or '').strip(), (gros or '').strip(), vtype, vcol, (taille or '').strip(),
+                         fr(pinit), fr(poids), fr(pach), fr(pvte), fr((pach or 0) * poids), fr((pvte or 0) * poids),
+                         (fourn or '').strip(), str(nopiece or '').strip(), d(datach), d(dclass),
+                         (position or '').strip(), ' ; '.join(obs), ''])
+    # les cas à vérifier en premier, puis le reste
+    out_rows.sort(key=lambda r: (0 if ('A VERIFIER' in r[17] or 'ANOMALIE' in r[17]) else 1, r[0], r[1]))
+    os.makedirs(OUT_DIR, exist_ok=True)
+    path = os.path.join(OUT_DIR, 'stock_access_analyse.csv')
+    with open(path, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.writer(f, delimiter=';')
+        w.writerow(header)
+        w.writerows(out_rows)
+    print('CSV écrit : %s' % path)
+    for k, v in counts.items():
+        print('   %-22s %d' % (k, v))
+    print('   à vérifier / anomalies : %d' % sum(1 for r in out_rows if ('A VERIFIER' in r[17] or 'ANOMALIE' in r[17])))
+
+
 def http(method, url, body=None):
     data = json.dumps(body).encode('utf-8') if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers={'Content-Type': 'application/json'})
@@ -176,6 +234,7 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest='cmd', required=True)
     e = sub.add_parser('export'); e.add_argument('--mdb', default=r'C:\Access\Data\Data.mdb'); e.add_argument('--include-classes', action='store_true')
+    c = sub.add_parser('csv'); c.add_argument('--mdb', default=r'C:\Access\Data\Data.mdb')
     l = sub.add_parser('load'); l.add_argument('--url', default='http://localhost:3000'); l.add_argument('--dry-run', action='store_true')
     a = ap.parse_args()
-    export(a) if a.cmd == 'export' else load(a)
+    {'export': export, 'csv': csv_export, 'load': load}[a.cmd](a)
