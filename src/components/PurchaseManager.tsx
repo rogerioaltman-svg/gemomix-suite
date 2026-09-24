@@ -1126,7 +1126,11 @@ export default function PurchaseManager({
                   onChange={(e) => setArtDirectEntry(e.target.checked)}
                   className="accent-[#bda165] cursor-pointer"
                 />
-                <span className="text-[11px] font-semibold">💎 Pierre unique — entrée directe en stock</span>
+                <span aria-hidden="true">💎</span>
+                <span className="text-[11px] font-semibold leading-tight">
+                  Pierre unique : entrée directe en stock
+                  <span className="block text-[9px] font-normal opacity-80">Sinon, ce sera un colis à trier en lots</span>
+                </span>
               </label>
               <button
                 id="btn-add-subart"
@@ -1322,7 +1326,7 @@ export default function PurchaseManager({
                                   </span>
                                 </div>
                                 <div className="mt-2 grid grid-cols-3 gap-1 font-mono text-[10px] text-gray-400">
-                                  <div>Poids parcel: <b className="text-white">{article.weight} ct</b></div>
+                                  <div>Poids du colis:<b className="text-white">{article.weight} ct</b></div>
                                   <div>Carat: <b className="text-white">{article.caratPrice} €/ct</b></div>
                                   <div>Total: <b className="text-[#eedfa7]">{article.totalPrice.toLocaleString()} €</b></div>
                                 </div>
