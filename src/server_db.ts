@@ -847,7 +847,12 @@ export async function savePurchase(p: Purchase): Promise<void> {
       ...p,
       reference: existing ? existing.reference : generatePurchaseReference(conn)
     };
-    upsertPurchase(conn, finalPurchase);
+    // Les détails de pierre (dont la photo) ne sont pas conservés dans l'achat
+    const storedPurchase: Purchase = {
+      ...finalPurchase,
+      articles: (finalPurchase.articles ?? []).map(({ stoneDetails, ...rest }) => rest)
+    };
+    upsertPurchase(conn, storedPurchase);
     createDirectEntryGemstones(conn, finalPurchase);
   });
   run();
@@ -890,9 +895,9 @@ function createDirectEntryGemstones(conn: Database.Database, p: Purchase) {
       reference: newRef,
       type: art.gemstoneType,
       weight: art.weight ?? 0,
-      cut: '',
-      color: '',
-      clarity: '',
+      cut: art.stoneDetails?.cut?.trim() ?? '',
+      color: art.stoneDetails?.color?.trim() ?? '',
+      clarity: art.stoneDetails?.clarity?.trim() ?? '',
       dimensions: { length: 0, width: 0, depth: 0 },
       refractiveIndex: '',
       specificGravity: 0,
@@ -906,6 +911,7 @@ function createDirectEntryGemstones(conn: Database.Database, p: Purchase) {
       dateAdded: p.date ?? new Date().toISOString().split('T')[0],
       description: `Entrée directe en stock depuis l'achat ${p.reference} — ${art.name}`,
       inclusions: [],
+      image: art.stoneDetails?.image || undefined,
       sourcePurchaseId: p.id,
       sourceArticleId: art.id,
       provenance: 'Achat'

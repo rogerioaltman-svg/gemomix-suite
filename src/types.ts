@@ -108,6 +108,9 @@ export interface PurchaseArticle {
   caratPrice: number; // buy price per carat in €
   totalPrice: number; // total cost in €
   notes?: string;
+  // Détails saisis à l'achat pour une pierre unique : servent uniquement à créer la
+  // fiche pierre (puis retirés de l'achat : la fiche est la seule source de vérité)
+  stoneDetails?: { cut?: string; color?: string; clarity?: string; image?: string };
   entryMode?: 'stock' | 'tri'; // 'stock' = pierre unique entrée directement à l'inventaire ; 'tri' (défaut) = colis à trier en lots
 }
 
