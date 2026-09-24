@@ -88,6 +88,8 @@ export default function SalesManager({
     companySettings?.siret ? `SIRET : ${companySettings.siret}` : '',
     companySettings?.vatNumber ? `TVA : ${companySettings.vatNumber}` : ''
   ].filter(Boolean).join(' · ');
+  // Référence lisible de la pierre vendue (et non son identifiant interne)
+  const gemstoneRef = (id?: string) => (id ? gemstones.find(g => g.id === id)?.reference : undefined);
   const sellerFooterLine = [companySettings?.name, sellerLegalIds].filter(Boolean).join(' · ');
 
   // Available (Disponible) gemstones for invoicing
@@ -555,7 +557,7 @@ export default function SalesManager({
                     className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
                   >
                     <option value="Virement">Virement direct</option>
-                    <option value="Card">Carte bancaire</option>
+                    <option value="Carte">Carte bancaire</option>
                     <option value="Espèces">Espèces (Guichet)</option>
                     <option value="Autre">Autre modalité / Chèque</option>
                   </select>
@@ -702,7 +704,7 @@ export default function SalesManager({
                       {invoiceForm.items.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="py-6 text-center text-gray-600 font-mono">
-                            Aucun article répertorié dans ce manuscrit commercial.
+                            Aucun article ajouté à cette facture.
                           </td>
                         </tr>
                       ) : (
@@ -929,7 +931,7 @@ export default function SalesManager({
                         {c.address && <p className="text-stone-600">{c.address}</p>}
                         <p className="text-stone-600">{[c.postalCode, c.city, c.country].filter(Boolean).join(', ')}</p>
                         {c.phone && <p className="text-stone-500">Tél: {c.phone}</p>}
-                        {c.vatNumber && <p className="text-stone-500 font-mono text-[10px] mt-1.5 border-t border-stone-200 pt-1">Haut. TVA : {c.vatNumber}</p>}
+                        {c.vatNumber && <p className="text-stone-500 font-mono text-[10px] mt-1.5 border-t border-stone-200 pt-1">N° TVA : {c.vatNumber}</p>}
                       </div>
                     );
                   })()
@@ -947,7 +949,7 @@ export default function SalesManager({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b-2 border-stone-800 bg-stone-100 text-stone-700 font-bold font-sans">
-                    <th className="py-2.5 px-3">Description du service ou de l'unité lapidaire</th>
+                    <th className="py-2.5 px-3">Désignation</th>
                     <th className="py-2.5 px-3">Poids (Ct)</th>
                     <th className="py-2.5 px-3 text-center">Quantité</th>
                     <th className="py-2.5 px-3 text-right">PU HT</th>
@@ -960,7 +962,7 @@ export default function SalesManager({
                     <tr key={index} className="text-stone-800">
                       <td className="py-3 px-3">
                         <span className="font-bold block text-stone-900">{item.description}</span>
-                        {item.gemstoneId && <span className="text-[9px] font-mono text-[#8a733e] block">Consommation de l'inventaire clinique - ID-Ref: {item.gemstoneId}</span>}
+                        {gemstoneRef(item.gemstoneId) && <span className="text-[9px] font-mono text-[#8a733e] block">Réf. pierre : {gemstoneRef(item.gemstoneId)}</span>}
                       </td>
                       <td className="py-3 px-3 font-mono font-medium">{item.weight ? `${item.weight} ct` : '—'}</td>
                       <td className="py-3 px-3 text-center font-mono">{item.quantity}</td>
@@ -1010,7 +1012,7 @@ export default function SalesManager({
                   </div>
 
                   <div className="flex justify-between text-stone-500 text-[11px]">
-                    <span>TVA collectée :</span>
+                    <span>Total TVA :</span>
                     <span>{formatCurrency(selectedInvoice.vatAmount)} €</span>
                   </div>
 
