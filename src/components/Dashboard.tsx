@@ -152,7 +152,7 @@ export default function Dashboard({
               <span className="text-emerald-400 font-mono">{stats.lotCount}</span>
             </div>
             <div className="flex justify-between">
-              <span>💼 Parcels bruts d'achat :</span>
+              <span>💼 Colis bruts à trier :</span>
               <span className="text-cyan-400 font-mono">{stats.rawPurchaseCount}</span>
             </div>
           </div>
@@ -182,7 +182,7 @@ export default function Dashboard({
               <span className="text-emerald-400 font-mono">{stats.lotCarats.toFixed(1)} ct</span>
             </div>
             <div className="flex justify-between">
-              <span>💼 Colis bruts d'achats :</span>
+              <span>💼 Colis bruts à trier :</span>
               <span className="text-cyan-400 font-mono">{stats.rawPurchaseCarats.toFixed(1)} ct</span>
             </div>
           </div>

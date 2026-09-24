@@ -452,7 +452,7 @@ export default function StockList({
                         </span>
                       ) : item.type === 'purchase_article' ? (
                         <span className="px-1.5 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/25 rounded text-[9px] font-bold tracking-wider">
-                          BRUT/PARCELLE
+                          BRUT/COLIS
                         </span>
                       ) : (
                         <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded text-[9px] font-bold tracking-wider">
