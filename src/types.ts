@@ -229,6 +229,33 @@ export interface Bijou {
   notes?: string;
 }
 
+// Copie figée à l'émission d'une facture : identité du vendeur et du client telles qu'elles
+// étaient ce jour-là. Modifier ensuite les Paramètres ou une fiche client ne change jamais
+// une facture déjà émise. Écrite une seule fois, par le serveur.
+export interface SellerSnapshot {
+  name: string;
+  address: string;
+  postalCode: string;
+  city: string;
+  country: string;
+  phone: string;
+  email: string;
+  vatNumber: string;
+  siret: string;
+}
+
+export interface ClientSnapshot {
+  name: string;
+  contactName?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  country?: string;
+  phone?: string;
+  email?: string;
+  vatNumber?: string;
+}
+
 export interface SalesInvoice {
   id: string;
   invoiceNumber: string;
@@ -244,5 +271,8 @@ export interface SalesInvoice {
   status: 'Brouillon' | 'Payée' | 'En attente' | 'Annulée';
   paymentMethod: 'Virement' | 'Carte' | 'Espèces' | 'Autre';
   notes?: string;
+  issuedAt?: string; // date d'émission (première sortie du brouillon)
+  sellerSnapshot?: SellerSnapshot; // absent sur un brouillon et sur les anciennes factures
+  clientSnapshot?: ClientSnapshot;
 }
 

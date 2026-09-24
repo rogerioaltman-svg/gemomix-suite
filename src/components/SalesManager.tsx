@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
-import { Client, Gemstone, SalesInvoice, InvoiceItem, CompanySettings } from '../types';
+import { Client, ClientSnapshot, Gemstone, SalesInvoice, InvoiceItem, CompanySettings } from '../types';
 import ClientFormModal from './ClientFormModal';
 import { 
   FileText, 
@@ -52,24 +52,26 @@ export default function SalesManager({
   // Création d'un client sans quitter la facturation : même fenêtre que « Tiers & CSV »
   const [isQuickClientModalOpen, setIsQuickClientModalOpen] = useState(false);
 
-  // Identité du vendeur pour l'impression : uniquement ce qui est renseigné dans les
-  // Paramètres, jamais de valeur de remplacement inventée sur un document légal
+  // Identité du vendeur pour l'impression : la copie figée à l'émission si elle existe, sinon
+  // les Paramètres actuels (brouillons, anciennes factures). Jamais de valeur de remplacement
+  // inventée sur un document légal.
+  const seller = selectedInvoice?.sellerSnapshot ?? companySettings;
   const sellerAddress = [
-    companySettings?.address,
-    [companySettings?.postalCode, companySettings?.city].filter(Boolean).join(' '),
-    companySettings?.country
+    seller?.address,
+    [seller?.postalCode, seller?.city].filter(Boolean).join(' '),
+    seller?.country
   ].filter(Boolean).join(', ');
   const sellerContact = [
-    companySettings?.phone ? `Tél : ${companySettings.phone}` : '',
-    companySettings?.email
+    seller?.phone ? `Tél : ${seller.phone}` : '',
+    seller?.email
   ].filter(Boolean).join(' · ');
   const sellerLegalIds = [
-    companySettings?.siret ? `SIRET : ${companySettings.siret}` : '',
-    companySettings?.vatNumber ? `TVA : ${companySettings.vatNumber}` : ''
+    seller?.siret ? `SIRET : ${seller.siret}` : '',
+    seller?.vatNumber ? `TVA : ${seller.vatNumber}` : ''
   ].filter(Boolean).join(' · ');
   // Référence lisible de la pierre vendue (et non son identifiant interne)
   const gemstoneRef = (id?: string) => (id ? gemstones.find(g => g.id === id)?.reference : undefined);
-  const sellerFooterLine = [companySettings?.name, sellerLegalIds].filter(Boolean).join(' · ');
+  const sellerFooterLine = [seller?.name, sellerLegalIds].filter(Boolean).join(' · ');
 
   // Available (Disponible) gemstones for invoicing
   const availableGemstones = gemstones.filter(g => g.status === 'Disponible');
@@ -437,6 +439,15 @@ export default function SalesManager({
       {/* VIEW 2: CREATE/EDIT INVOICE */}
       {(viewMode === 'create' || viewMode === 'edit') && (
         <form onSubmit={handleSaveInvoiceSubmit} className="space-y-6 text-xs no-print">
+          {viewMode === 'edit' && selectedInvoice && selectedInvoice.status !== 'Brouillon' && (
+            <div id="invoice-edit-warning" className="text-[11px] rounded-lg px-3 py-2.5 border bg-amber-500/10 border-amber-500/25 text-amber-500 leading-relaxed">
+              Cette facture a déjà été émise. Une facture émise ne devrait plus être modifiée : pour corriger une erreur,
+              il faudra émettre un avoir (fonction à venir).{' '}
+              {selectedInvoice.sellerSnapshot
+                ? 'Les coordonnées du vendeur et du client restent figées.'
+                : "Cette ancienne facture n'a pas de copie figée : elle affiche les coordonnées actuelles."}
+            </div>
+          )}
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
@@ -489,7 +500,7 @@ export default function SalesManager({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">DATE DE FACTURATIOM</label>
+                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">DATE DE FACTURATION</label>
                   <input
                     type="date"
                     required
@@ -846,6 +857,21 @@ export default function SalesManager({
             </div>
           </div>
 
+          {/* État de la copie figée (jamais imprimé) */}
+          {selectedInvoice.sellerSnapshot ? (
+            <div id="invoice-frozen-notice" className="no-print max-w-4xl mx-auto text-[11px] rounded-lg px-3 py-2 border bg-emerald-500/10 border-emerald-500/25 text-emerald-400">
+              Coordonnées du vendeur et du client figées à l'émission{selectedInvoice.issuedAt ? ` (le ${new Date(selectedInvoice.issuedAt).toLocaleDateString('fr-FR')})` : ''} : les modifier ensuite dans les Paramètres ou l'annuaire ne change pas cette facture.
+            </div>
+          ) : selectedInvoice.status !== 'Brouillon' ? (
+            <div id="invoice-frozen-notice" className="no-print max-w-4xl mx-auto text-[11px] rounded-lg px-3 py-2 border bg-amber-500/10 border-amber-500/25 text-amber-500">
+              Cette facture n'est pas figée : elle affiche les coordonnées actuelles du vendeur et du client, et changerait si elles étaient modifiées.
+            </div>
+          ) : (
+            <div id="invoice-frozen-notice" className="no-print max-w-4xl mx-auto text-[11px] rounded-lg px-3 py-2 border bg-[#171e2c] border-[#27354d] text-gray-400">
+              Brouillon : les coordonnées seront figées à l'émission de la facture.
+            </div>
+          )}
+
           {/* Compliant VAT Printable Invoice Structure */}
           <div className="bg-white text-gray-900 border border-gray-300 rounded-2xl p-8 sm:p-12 shadow-2xl relative max-w-4xl mx-auto print:border-none print:shadow-none print:p-0 print:m-0 font-sans">
             
@@ -855,14 +881,14 @@ export default function SalesManager({
                 <div className="flex items-center gap-2 mb-2">
 
                   <h1 className="text-2xl font-black tracking-wider uppercase font-sans">
-                    {companySettings?.name || "Société non renseignée"}
+                    {seller?.name || "Société non renseignée"}
                   </h1>
                 </div>
                 <div className="text-xs text-stone-500 font-sans space-y-0.5">
                   {sellerAddress && <p>{sellerAddress}</p>}
                   {sellerContact && <p>{sellerContact}</p>}
                   {sellerLegalIds && <p>{sellerLegalIds}</p>}
-                  {!companySettings?.name && (
+                  {!seller?.name && (
                     <p className="text-amber-600 no-print">Renseignez votre société dans Paramètres pour compléter cet en-tête.</p>
                   )}
                 </div>
@@ -884,9 +910,9 @@ export default function SalesManager({
             <div className="py-8 text-xs font-sans border-b border-stone-200">
               <div className="bg-stone-50 p-4 border border-stone-200 rounded-xl relative w-full sm:w-1/2">
                 <span className="block font-mono text-[9px] uppercase tracking-wider text-[#8a733e] font-extrabold mb-1.5">FACTURÉ À</span>
-                {clients.find(c => c.id === selectedInvoice.clientId) ? (
+                {(selectedInvoice.clientSnapshot ?? clients.find(c => c.id === selectedInvoice.clientId)) ? (
                   (() => {
-                    const c = clients.find(c => c.id === selectedInvoice.clientId)!;
+                    const c: ClientSnapshot | Client = (selectedInvoice.clientSnapshot ?? clients.find(x => x.id === selectedInvoice.clientId))!;
                     return (
                       <div className="text-stone-900 space-y-1">
                         <p className="font-bold text-stone-900 text-sm">{c.name}</p>

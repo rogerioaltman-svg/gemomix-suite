@@ -7,7 +7,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SEED_GEMSTONES, SEED_PURCHASES, SEED_LOTS } from './data';
-import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou } from './types';
+import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot } from './types';
 
 export const DB_FILE_PATH = path.join(process.cwd(), 'gemophy.db');
 // Ancienne base JSON (générée par la version AI Studio) : importée puis archivée au premier lancement
@@ -180,6 +180,7 @@ function getConnection(): Database.Database {
   ensureSourceColumns(db);
   ensureDeletedAtColumns(db);
   ensureSupplierReferenceColumn(db);
+  ensureInvoiceSnapshotColumns(db);
   bootstrapIfEmpty(db);
 
   // Migration terminologie : 'Consignation' -> 'Confié' (terme du négoce). Idempotent.
@@ -226,6 +227,17 @@ function ensureSupplierReferenceColumn(conn: Database.Database) {
   if (!cols.includes('no_supplier_invoice')) {
     console.log('[SQLite] Migration : ajout de no_supplier_invoice sur purchases...');
     conn.exec(`ALTER TABLE purchases ADD COLUMN no_supplier_invoice INTEGER NOT NULL DEFAULT 0;`);
+  }
+}
+
+// Copie figée de l'identité du vendeur et du client à l'émission d'une facture
+function ensureInvoiceSnapshotColumns(conn: Database.Database) {
+  const cols = (conn.pragma('table_info(sales_invoices)') as any[]).map(c => c.name);
+  for (const col of ['issued_at', 'seller_snapshot', 'client_snapshot']) {
+    if (!cols.includes(col)) {
+      console.log(`[SQLite] Migration : ajout de ${col} sur sales_invoices...`);
+      conn.exec(`ALTER TABLE sales_invoices ADD COLUMN ${col} TEXT;`);
+    }
   }
 }
 
@@ -683,7 +695,10 @@ function rowToInvoice(r: any): SalesInvoice {
     totalInclTax: r.total_incl_tax,
     status: r.status,
     paymentMethod: r.payment_method ?? 'Autre',
-    notes: r.notes ?? undefined
+    notes: r.notes ?? undefined,
+    issuedAt: r.issued_at ?? undefined,
+    sellerSnapshot: r.seller_snapshot ? JSON.parse(r.seller_snapshot) : undefined,
+    clientSnapshot: r.client_snapshot ? JSON.parse(r.client_snapshot) : undefined
   };
 }
 
@@ -691,10 +706,12 @@ function upsertInvoice(conn: Database.Database, inv: SalesInvoice) {
   conn.prepare(`
     INSERT OR REPLACE INTO sales_invoices (
       id, invoice_number, date, due_date, client_id, client_name, items,
-      discount, total_excl_tax, vat_amount, total_incl_tax, status, payment_method, notes
+      discount, total_excl_tax, vat_amount, total_incl_tax, status, payment_method, notes,
+      issued_at, seller_snapshot, client_snapshot
     ) VALUES (
       @id, @invoiceNumber, @date, @dueDate, @clientId, @clientName, @items,
-      @discount, @totalExclTax, @vatAmount, @totalInclTax, @status, @paymentMethod, @notes
+      @discount, @totalExclTax, @vatAmount, @totalInclTax, @status, @paymentMethod, @notes,
+      @issuedAt, @sellerSnapshot, @clientSnapshot
     )
   `).run({
     id: inv.id,
@@ -710,7 +727,10 @@ function upsertInvoice(conn: Database.Database, inv: SalesInvoice) {
     totalInclTax: inv.totalInclTax ?? 0,
     status: inv.status ?? 'Brouillon',
     paymentMethod: inv.paymentMethod ?? 'Autre',
-    notes: inv.notes ?? null
+    notes: inv.notes ?? null,
+    issuedAt: inv.issuedAt ?? null,
+    sellerSnapshot: inv.sellerSnapshot ? JSON.stringify(inv.sellerSnapshot) : null,
+    clientSnapshot: inv.clientSnapshot ? JSON.stringify(inv.clientSnapshot) : null
   });
 }
 
@@ -1123,10 +1143,46 @@ export async function getAllSalesInvoices(): Promise<SalesInvoice[]> {
     .map(rowToInvoice);
 }
 
+// Identité du vendeur telle qu'elle est aujourd'hui dans les Paramètres
+function buildSellerSnapshot(conn: Database.Database): SellerSnapshot {
+  const r: any = conn.prepare('SELECT * FROM company_settings WHERE id = 1').get() ?? {};
+  return {
+    name: r.name ?? '', address: r.address ?? '', postalCode: r.postal_code ?? '', city: r.city ?? '',
+    country: r.country ?? '', phone: r.phone ?? '', email: r.email ?? '',
+    vatNumber: r.vat_number ?? '', siret: r.siret ?? ''
+  };
+}
+
+// Client tel qu'il est aujourd'hui dans l'annuaire (même archivé) ; à défaut, le nom saisi sur la facture
+function buildClientSnapshot(conn: Database.Database, inv: SalesInvoice): ClientSnapshot {
+  const r: any = inv.clientId ? conn.prepare('SELECT * FROM clients WHERE id = ?').get(inv.clientId) : undefined;
+  if (!r) return { name: inv.clientName ?? '' };
+  return {
+    name: r.name, contactName: r.contact_name ?? undefined, address: r.address ?? undefined,
+    postalCode: r.postal_code ?? undefined, city: r.city ?? undefined, country: r.country ?? undefined,
+    phone: r.phone ?? undefined, email: r.email ?? undefined, vatNumber: r.vat_number ?? undefined
+  };
+}
+
 export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
   const conn = getConnection();
   const run = conn.transaction(() => {
-    upsertInvoice(conn, inv);
+    // La copie figée est décidée ici, par le serveur, et jamais par le navigateur : ce qui est
+    // déjà enregistré est conservé tel quel, ce que le client envoie à ce sujet est ignoré.
+    // Elle n'est créée qu'au passage du brouillon à l'émission : une ancienne facture déjà émise
+    // (sans copie) n'est pas figée par une simple modification.
+    const existing = conn.prepare('SELECT status, issued_at, seller_snapshot, client_snapshot FROM sales_invoices WHERE id = ?').get(inv.id) as
+      { status: string; issued_at: string | null; seller_snapshot: string | null; client_snapshot: string | null } | undefined;
+    let issuedAt = existing?.issued_at ?? undefined;
+    let sellerSnapshot: SellerSnapshot | undefined = existing?.seller_snapshot ? JSON.parse(existing.seller_snapshot) : undefined;
+    let clientSnapshot: ClientSnapshot | undefined = existing?.client_snapshot ? JSON.parse(existing.client_snapshot) : undefined;
+    const becomesIssued = inv.status !== 'Brouillon' && (!existing || existing.status === 'Brouillon');
+    if (becomesIssued && !sellerSnapshot) {
+      sellerSnapshot = buildSellerSnapshot(conn);
+      clientSnapshot = buildClientSnapshot(conn, inv);
+      issuedAt = new Date().toISOString();
+    }
+    upsertInvoice(conn, { ...inv, issuedAt, sellerSnapshot, clientSnapshot });
 
     // Marque automatiquement les pierres référencées comme vendues (facture payée ou en attente)
     if (inv.status === 'Payée' || inv.status === 'En attente') {
