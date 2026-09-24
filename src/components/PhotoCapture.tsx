@@ -6,6 +6,36 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Upload, RotateCcw, Check, Trash2, CameraOff } from 'lucide-react';
 
+// Réduit une photo avant enregistrement (1600 px max, JPEG) : une photo de téléphone
+// pèse plusieurs Mo, cela ne sert à rien pour une fiche et alourdirait la base.
+const MAX_SIDE = 1600;
+const JPEG_QUALITY = 0.82;
+
+function downscaleImage(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.fillStyle = '#ffffff'; // fond blanc pour les PNG transparents
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      try {
+        const out = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+        resolve(out.length < dataUrl.length ? out : dataUrl);
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl); // format non décodable : on garde l'original
+    img.src = dataUrl;
+  });
+}
+
 interface PhotoCaptureProps {
   value?: string; // Base64 or image URL
   onChange: (base64Image: string) => void;
@@ -106,7 +136,7 @@ export default function PhotoCapture({ value, onChange, onClear, label = "Photo 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         try {
           const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          onChange(dataUrl);
+          downscaleImage(dataUrl).then(onChange);
           stopCamera();
         } catch (err) {
           console.error("Canvas export failed:", err);
@@ -131,7 +161,7 @@ export default function PhotoCapture({ value, onChange, onClear, label = "Photo 
     const reader = new FileReader();
     reader.onload = (event) => {
       if (event.target?.result) {
-        onChange(event.target.result as string);
+        downscaleImage(event.target.result as string).then(onChange);
       }
     };
     reader.onerror = (err) => {
