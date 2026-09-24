@@ -30,7 +30,8 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json() as any);
+// Les photos (pierres, lots) sont transmises en data-URL : la limite par défaut (100 ko) les rejetait
+app.use(express.json({ limit: '25mb' }) as any);
 
 // --- Database CRUD API Endpoints ---
 
