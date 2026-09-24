@@ -100,10 +100,17 @@ export default function PurchaseManager({
 
   const errorBorder = (key: string) => formErrors[key] ? 'border-red-500/70' : 'border-[#27354d]';
 
-  const FieldError = ({ field }: { field: string }) =>
-    formErrors[field] ? (
-      <p className="text-red-400 text-[10px] font-sans normal-case mt-1">{formErrors[field]}</p>
-    ) : null;
+  // L'emplacement du message est toujours réservé : les champs ne bougent pas quand une
+  // erreur apparaît ou disparaît (une seule ligne, donc messages courts)
+  const FieldError = ({ field }: { field: string }) => (
+    <p
+      className="h-[14px] mt-0.5 text-red-400 text-[10px] leading-[14px] font-sans normal-case whitespace-nowrap overflow-hidden text-ellipsis"
+      title={formErrors[field] || undefined}
+      role={formErrors[field] ? 'alert' : undefined}
+    >
+      {formErrors[field] || ''}
+    </p>
+  );
 
   // Fournisseurs proposés : uniquement ceux de l'annuaire (Tiers & CSV). Un fournisseur
   // saisi à la main dans un ancien achat reste sélectionnable tant que cet achat est ouvert.
@@ -227,9 +234,9 @@ export default function PurchaseManager({
     const priceNum = parseFloat(artCaratPrice) || 0;
 
     const errs: Record<string, string> = {};
-    if (!artName.trim()) errs.artName = "Veuillez saisir un nom pour l'article.";
-    if (weightNum <= 0) errs.artWeight = "Le poids doit être supérieur à 0.";
-    if (priceNum <= 0) errs.artCaratPrice = "Le prix au carat doit être supérieur à 0.";
+    if (!artName.trim()) errs.artName = "Nom requis";
+    if (weightNum <= 0) errs.artWeight = "Doit être supérieur à 0";
+    if (priceNum <= 0) errs.artCaratPrice = "Doit être supérieur à 0";
     if (Object.keys(errs).length > 0) {
       showErrors(errs, errs.artName ? 'art-name-input' : errs.artWeight ? 'art-weight-input' : 'art-price-input');
       return;
@@ -268,10 +275,10 @@ export default function PurchaseManager({
   const handleSaveFullPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
-    if (!purchaseRef.trim()) errs.purchaseRef = "La référence est requise.";
-    if (!supplier.trim()) errs.supplier = "Le fournisseur est requis.";
-    if (!noSupplierInvoice && !supplierRef.trim()) errs.supplierRef = "Le n° de facture fournisseur est requis (ou cochez « Achat sans facture fournisseur »).";
-    if (tempArticles.length === 0) errs.articles = "Ajoutez au moins un article d'achat avant d'enregistrer.";
+    if (!purchaseRef.trim()) errs.purchaseRef = "Référence requise";
+    if (!supplier.trim()) errs.supplier = "Fournisseur requis";
+    if (!noSupplierInvoice && !supplierRef.trim()) errs.supplierRef = "N° requis, ou cochez « sans facture »";
+    if (tempArticles.length === 0) errs.articles = "Ajoutez au moins un article avant d'enregistrer";
     if (Object.keys(errs).length > 0) {
       showErrors(errs, errs.purchaseRef ? 'pur-ref'
         : errs.supplier ? 'pur-supplier-select'
@@ -320,8 +327,8 @@ export default function PurchaseManager({
 
     const weightNum = parseFloat(lotWeight) || 0;
     const errs: Record<string, string> = {};
-    if (!lotRef.trim() || lotRef === '…') errs.lotRef = "La référence n'a pas pu être générée. Réessayez d'ouvrir le tri.";
-    if (weightNum <= 0) errs.lotWeight = "Le poids du lot doit être supérieur à 0 ct.";
+    if (!lotRef.trim() || lotRef === '…') errs.lotRef = "Référence non générée : rouvrez le tri";
+    if (weightNum <= 0) errs.lotWeight = "Doit être supérieur à 0 ct";
     else {
       // Blocage strict : le total trié ne peut pas dépasser le poids acheté du colis
       const otherLotsWeight = articleLots
@@ -330,8 +337,8 @@ export default function PurchaseManager({
       const available = Number((activeTriageArticle.article.weight - otherLotsWeight).toFixed(2));
       if (weightNum > available + 0.0001) {
         errs.lotWeight = available > 0
-          ? `Dépassement : il ne reste que ${available} ct à trier sur ce colis (${activeTriageArticle.article.weight} ct achetés).`
-          : `Ce colis est entièrement trié (${activeTriageArticle.article.weight} ct) : aucun poids disponible.`;
+          ? `Il ne reste que ${available} ct à trier (colis : ${activeTriageArticle.article.weight} ct)`
+          : `Colis entièrement trié (${activeTriageArticle.article.weight} ct)`;
       }
     }
     if (Object.keys(errs).length > 0) {
@@ -1066,9 +1073,11 @@ export default function PurchaseManager({
               <span>Articles Composants l'Achat</span>
               <span className="text-[10px] text-gray-500 font-sans normal-case">Ajoutez chaque lot ou diamant brut de la facture</span>
             </h4>
-            <FieldError field="articles" />
+            {(formErrors.artName || formErrors.artWeight || formErrors.artCaratPrice)
+              ? <div className="h-[14px]" />
+              : <FieldError field="articles" />}
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs items-end">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs items-start">
               <div className="md:col-span-5 space-y-1">
                 <label className="block text-gray-400 font-mono text-[10px] uppercase">Désignation de l'Article / Colis</label>
                 <input

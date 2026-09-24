@@ -307,7 +307,7 @@ export default function InventoryManager({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reference.trim()) {
-      setReferenceError("La référence unique est requise.");
+      setReferenceError("Référence requise");
       document.getElementById('gem-ref-input')?.focus();
       return;
     }
@@ -315,7 +315,7 @@ export default function InventoryManager({
     // Module 9 : le prix de vente devient obligatoire au moment de passer une
     // pierre au statut "Disponible" (pas avant, le temps de l'expertiser).
     if (status === 'Disponible' && !(Number(sellingPrice) > 0)) {
-      setSellingPriceError("Le prix de vente est requis pour passer une pierre au statut Disponible.");
+      setSellingPriceError("Prix de vente requis");
       document.getElementById('gem-selling-price-input')?.focus();
       return;
     }
@@ -438,9 +438,7 @@ export default function InventoryManager({
                   className={`w-full px-3 py-2 text-xs bg-[#171e2c] border ${referenceError ? 'border-red-500/70' : 'border-[#27354d]'} rounded-lg text-white focus:outline-none focus:border-[#b4985c] font-mono ${selectedGem?.sourcePurchaseId ? 'cursor-not-allowed bg-[#12161f]' : ''}`}
                   placeholder="ex: PP-2026-DI-001"
                 />
-                {referenceError && (
-                  <p className="text-red-400 text-[10px] mt-1">{referenceError}</p>
-                )}
+                <p className="h-[14px] mt-0.5 text-red-400 text-[10px] leading-[14px] whitespace-nowrap overflow-hidden text-ellipsis" title={referenceError || undefined}>{referenceError}</p>
               </div>
 
               {/* Gemstone Variety */}
@@ -745,9 +743,7 @@ export default function InventoryManager({
                   placeholder="Non estimée"
                   className={`w-full px-2 py-1.5 text-xs bg-[#121620] border ${sellingPriceError ? 'border-red-500/70' : 'border-[#212a3d]'} rounded text-white font-mono text-yellow-500 font-bold`}
                 />
-                {sellingPriceError && (
-                  <p className="text-red-400 text-[9px] mt-1 col-span-2">{sellingPriceError}</p>
-                )}
+                <p className="h-[14px] mt-0.5 text-red-400 text-[10px] leading-[14px] whitespace-nowrap overflow-hidden text-ellipsis" title={sellingPriceError || undefined}>{sellingPriceError}</p>
               </div>
 
               {/* Barème d'estimation par paliers métier */}
