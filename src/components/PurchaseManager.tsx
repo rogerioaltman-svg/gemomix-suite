@@ -948,9 +948,9 @@ export default function PurchaseManager({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs items-start">
             <div className="space-y-1 font-mono uppercase">
-              <label className="block text-gray-300 flex items-center gap-1">
+              <label className="flex items-center gap-1 h-5 text-gray-300">
                 <span>N° Facture d'Achat</span>
                 <Lock className="h-3 w-3 text-gray-500 normal-case" />
               </label>
@@ -963,31 +963,9 @@ export default function PurchaseManager({
                 className={`w-full px-3 py-2 bg-[#12161f] border ${errorBorder('purchaseRef')} text-gray-300 rounded cursor-not-allowed`}
               />
               <FieldError field="purchaseRef" />
-              <label className="block text-gray-300 mt-3">N° Facture Fournisseur {!noSupplierInvoice && <span className="text-red-400">*</span>}</label>
-              <input
-                id="pur-supplier-ref"
-                type="text"
-                value={supplierRef}
-                disabled={noSupplierInvoice}
-                onChange={(e) => { setSupplierRef(e.target.value); clearError('supplierRef'); }}
-                placeholder={noSupplierInvoice ? "Sans facture fournisseur" : "N° figurant sur la facture d'origine"}
-                title="Numéro figurant sur la facture émise par le fournisseur"
-                className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplierRef')} text-white rounded focus:border-[#b4985c] normal-case disabled:opacity-50 disabled:cursor-not-allowed`}
-              />
-              <FieldError field="supplierRef" />
-              <label className="flex items-center gap-1.5 mt-1 normal-case text-[11px] text-gray-400 cursor-pointer">
-                <input
-                  id="pur-no-supplier-invoice"
-                  type="checkbox"
-                  checked={noSupplierInvoice}
-                  onChange={(e) => { setNoSupplierInvoice(e.target.checked); if (e.target.checked) { setSupplierRef(''); clearError('supplierRef'); } }}
-                  className="accent-[#bda165]"
-                />
-                Achat sans facture fournisseur
-              </label>
             </div>
             <div className="space-y-1 font-mono uppercase col-span-2">
-              <div className="flex justify-between items-center mb-0.5">
+              <div className="flex justify-between items-center h-5">
                 <label className="block text-gray-300">Fournisseur / Négociant de brut</label>
                 <button
                   type="button"
@@ -1044,7 +1022,7 @@ export default function PurchaseManager({
               <FieldError field="supplier" />
             </div>
             <div className="space-y-1 font-mono uppercase">
-              <label className="block text-gray-300">Date d'Acquisition</label>
+              <label className="flex items-center h-5 text-gray-300">Date d'Acquisition</label>
               <input 
                 id="pur-date"
                 type="date"
@@ -1053,6 +1031,38 @@ export default function PurchaseManager({
                 onChange={(e) => setPDate(e.target.value)}
                 className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded focus:border-[#b4985c]"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs items-start">
+            <div className="space-y-1 font-mono uppercase">
+              <label className="flex items-center h-5 text-gray-300">
+                N° Facture Fournisseur {!noSupplierInvoice && <span className="text-red-400 ml-1">*</span>}
+              </label>
+              <input
+                id="pur-supplier-ref"
+                type="text"
+                value={supplierRef}
+                disabled={noSupplierInvoice}
+                onChange={(e) => { setSupplierRef(e.target.value); clearError('supplierRef'); }}
+                placeholder={noSupplierInvoice ? "Sans facture fournisseur" : "N° figurant sur la facture d'origine"}
+                title="Numéro figurant sur la facture émise par le fournisseur"
+                className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplierRef')} text-white rounded focus:border-[#b4985c] normal-case disabled:opacity-50 disabled:cursor-not-allowed`}
+              />
+              <FieldError field="supplierRef" />
+            </div>
+            <div className="md:col-span-3 space-y-1">
+              <div className="hidden md:block h-5" aria-hidden="true" />
+              <label className="flex items-center gap-1.5 md:h-[34px] normal-case text-[11px] text-gray-400 cursor-pointer">
+                <input
+                  id="pur-no-supplier-invoice"
+                  type="checkbox"
+                  checked={noSupplierInvoice}
+                  onChange={(e) => { setNoSupplierInvoice(e.target.checked); if (e.target.checked) { setSupplierRef(''); clearError('supplierRef'); } }}
+                  className="accent-[#bda165]"
+                />
+                Achat sans facture fournisseur
+              </label>
             </div>
           </div>
 
