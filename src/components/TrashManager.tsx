@@ -59,7 +59,7 @@ export default function TrashManager({ items, onRestore }: TrashManagerProps) {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto animate-fadeIn mt-6">
+    <div className="space-y-6 animate-fadeIn">
       <div className="bg-[#121620] border border-[#212a3d] rounded-2xl p-6 sm:p-8 shadow-xl">
         <div className="flex items-center gap-3 mb-6 border-b border-[#212a3d] pb-6">
           <div className="p-3 bg-[#bda165]/10 text-[#bda165] rounded-xl">
