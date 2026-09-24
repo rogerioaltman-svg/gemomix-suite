@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Gemstone, PriceGuideEntry, Purchase } from '../types';
+import { Gemstone, PriceGuideEntry, Purchase, Supplier } from '../types';
+import SupplierFormModal from './SupplierFormModal';
 import {
   Save,
   RotateCcw,
@@ -16,8 +17,7 @@ import {
   Compass,
   FileCheck,
   Award,
-  History
-} from 'lucide-react';
+  History, Plus, UserPlus } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
 import RecuttingSection from './RecuttingSection';
 import MovementHistory from './MovementHistory';
@@ -96,6 +96,8 @@ const PARAM_TEMPLATES: Record<string, { ri: string; sg: number; defaultOrigin: s
 };
 
 interface InventoryManagerProps {
+  suppliers?: Supplier[];
+  onSaveSupplier?: (s: Supplier) => Promise<boolean | void> | boolean | void;
   gemstones: Gemstone[];
   selectedGem: Gemstone | null;
   onSaveGem: (gem: Gemstone) => void;
@@ -114,6 +116,8 @@ export default function InventoryManager({
   onClearSelection,
   priceGuide = [],
   purchases = [],
+  suppliers = [],
+  onSaveSupplier,
   onDeleteGem,
   onUpdateGemInline,
   onGenerateCertificate
@@ -153,6 +157,10 @@ export default function InventoryManager({
   const [provenance, setProvenance] = useState('Stock initial');
   const [location, setLocation] = useState('');
   const [dealer, setDealer] = useState('');
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  // Fournisseurs proposés : ceux de l'annuaire ; la valeur déjà saisie sur une ancienne fiche reste visible
+  const directorySuppliers = Array.from(new Set(suppliers.map(sp => (sp.name || '').trim()).filter(Boolean)))
+    .sort((x, y) => x.localeCompare(y, 'fr'));
   const [description, setDescription] = useState('');
   const [inclusions, setInclusions] = useState<string[]>([]);
   const [newInclusion, setNewInclusion] = useState('');
@@ -826,16 +834,36 @@ export default function InventoryManager({
               </div>
             </div>
 
-            {/* Dealer name */}
+            {/* Fournisseur : choisi dans l'annuaire, ou créé sur place */}
             <div>
               <label className="block text-gray-400 text-xs font-mono mb-1">FOURNISSEUR / NÉGOCIANT</label>
-              <input 
-                type="text" 
-                value={dealer} 
-                onChange={(e) => setDealer(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] rounded-lg text-white focus:outline-none"
-                placeholder="Fournisseur ou contact"
-              />
+              <div className="flex items-center gap-2">
+                <select
+                  id="gem-dealer-select"
+                  value={dealer}
+                  onChange={(e) => setDealer(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] rounded-lg text-white focus:outline-none focus:border-[#b4985c] cursor-pointer"
+                >
+                  <option value="">-- Aucun --</option>
+                  {dealer && dealer !== 'N/A' && !directorySuppliers.includes(dealer) && (
+                    <option value={dealer}>{dealer} (hors annuaire)</option>
+                  )}
+                  {directorySuppliers.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+                {onSaveSupplier && (
+                  <button
+                    type="button"
+                    id="gem-new-supplier-button"
+                    onClick={() => setIsSupplierModalOpen(true)}
+                    title="Nouveau fournisseur"
+                    className="shrink-0 px-3 py-2 bg-[#171e2c] hover:bg-[#1f283d] border border-[#27354d] text-[#bda165] rounded-lg transition-colors"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Inclusions List Management */}
@@ -940,6 +968,19 @@ export default function InventoryManager({
             </div>
           </div>
         </div>
+      )}
+
+      {isSupplierModalOpen && onSaveSupplier && (
+        <SupplierFormModal
+          supplier={null}
+          onSave={async (newSupplier) => {
+            const ok = await onSaveSupplier(newSupplier);
+            if (ok === false) return false;
+            setDealer(newSupplier.name);
+            return true;
+          }}
+          onClose={() => setIsSupplierModalOpen(false)}
+        />
       )}
     </div>
   );

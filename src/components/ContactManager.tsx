@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Supplier, Client } from '../types';
 import ClientFormModal from './ClientFormModal';
+import SupplierFormModal from './SupplierFormModal';
 import { 
   Users, 
   UserPlus, 
@@ -26,7 +27,7 @@ import {
 interface ContactManagerProps {
   suppliers: Supplier[];
   clients: Client[];
-  onSaveSupplier: (s: Supplier) => Promise<void> | void;
+  onSaveSupplier: (s: Supplier) => Promise<boolean | void> | boolean | void;
   onDeleteSupplier: (id: string) => Promise<void> | void;
   onSaveClient: (c: Client) => Promise<boolean | void> | boolean | void;
   onDeleteClient: (id: string) => Promise<void> | void;
@@ -62,18 +63,6 @@ export default function ContactManager({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handlers for Add/Edit Client
-  // Handlers for Add/Edit Supplier
-  const [supplierForm, setSupplierForm] = useState({
-    name: '',
-    contactName: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    country: 'France',
-    vatNumber: '',
-    notes: ''
-  });
 
   // Open forms helper
   const handleOpenNewClient = () => {
@@ -88,56 +77,12 @@ export default function ContactManager({
 
   const handleOpenNewSupplier = () => {
     setEditingSupplier(null);
-    setSupplierForm({
-      name: '',
-      contactName: '',
-      email: '',
-      phone: '',
-      address: '',
-      city: '',
-      country: 'France',
-      vatNumber: '',
-      notes: ''
-    });
     setIsSupplierModalOpen(true);
   };
 
-  const handleOpenEditSupplier = (s: Supplier) => {
-    setEditingSupplier(s);
-    setSupplierForm({
-      name: s.name || '',
-      contactName: s.contactName || '',
-      email: s.email || '',
-      phone: s.phone || '',
-      address: s.address || '',
-      city: s.city || '',
-      country: s.country || 'France',
-      vatNumber: s.vatNumber || '',
-      notes: s.notes || ''
-    });
+  const handleOpenEditSupplier = (sup: Supplier) => {
+    setEditingSupplier(sup);
     setIsSupplierModalOpen(true);
-  };
-
-  const handleSaveSupplierSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!supplierForm.name) return;
-
-    const data: Supplier = {
-      id: editingSupplier ? editingSupplier.id : `SUP-${Date.now()}`,
-      name: supplierForm.name,
-      contactName: supplierForm.contactName || undefined,
-      email: supplierForm.email || undefined,
-      phone: supplierForm.phone || undefined,
-      address: supplierForm.address || undefined,
-      city: supplierForm.city || undefined,
-      country: supplierForm.country || 'France',
-      vatNumber: supplierForm.vatNumber || undefined,
-      notes: supplierForm.notes || undefined,
-      dateAdded: editingSupplier ? editingSupplier.dateAdded : new Date().toISOString()
-    };
-
-    await onSaveSupplier(data);
-    setIsSupplierModalOpen(false);
   };
 
   // Parsed CSV content processor
@@ -881,143 +826,13 @@ export default function ContactManager({
         />
       )}
 
-      {/* NEW/EDIT SUPPLIER MODAL */}
+      {/* NEW/EDIT SUPPLIER MODAL : fenêtre partagée avec les achats et la fiche pierre */}
       {isSupplierModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#050608]/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#121620] border border-[#232f46] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-            <div className="p-6 bg-[#171d2b] border-b border-[#212a3d] flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Briefcase className="h-5 w-5 text-sky-400" />
-                <h3 className="text-base font-bold text-white">
-                  {editingSupplier ? "Modifier le Fournisseur" : "Nouveau Fournisseur Partenaire"}
-                </h3>
-              </div>
-              <button onClick={() => setIsSupplierModalOpen(false)} className="text-gray-500 hover:text-white cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveSupplierSubmit} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">NOM DE L'ENTREPRISE / MINE COMMERCIALE *</label>
-                <input
-                  type="text"
-                  required
-                  value={supplierForm.name}
-                  onChange={(e) => setSupplierForm({...supplierForm, name: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none focus:border-[#bda165]"
-                  placeholder="ex: Jaipur Imperial Gemstone Mining"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">NOM DU NÉGOCIANT</label>
-                  <input
-                    type="text"
-                    value={supplierForm.contactName}
-                    onChange={(e) => setSupplierForm({...supplierForm, contactName: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="Prénom & Nom"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">NUMÉRO TVA / CODE SUPPLIER</label>
-                  <input
-                    type="text"
-                    value={supplierForm.vatNumber}
-                    onChange={(e) => setSupplierForm({...supplierForm, vatNumber: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white font-mono rounded-lg focus:outline-none"
-                    placeholder="Code ou TVA"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">EMAIL PROFESSIONNEL</label>
-                  <input
-                    type="email"
-                    value={supplierForm.email}
-                    onChange={(e) => setSupplierForm({...supplierForm, email: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="deal@supplier.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">TÉLÉPHONE / WHATSAPP SUPPLIER</label>
-                  <input
-                    type="text"
-                    value={supplierForm.phone}
-                    onChange={(e) => setSupplierForm({...supplierForm, phone: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="ex: +91 98..."
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-2">
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">ADRESSE DU SIÈGE ET DOCK</label>
-                  <input
-                    type="text"
-                    value={supplierForm.address}
-                    onChange={(e) => setSupplierForm({...supplierForm, address: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="Quartier, rue..."
-                  />
-                </div>
-                <div className="col-span-1 border-l border-gray-800 pl-2">
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">VILLE / CODE</label>
-                  <input
-                    type="text"
-                    value={supplierForm.city}
-                    onChange={(e) => setSupplierForm({...supplierForm, city: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="ex: Chanthaburi"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">PAYS D'EXPORTATION D'ORIGINE</label>
-                <input
-                  type="text"
-                  value={supplierForm.country}
-                  onChange={(e) => setSupplierForm({...supplierForm, country: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                  placeholder="ex: Thaïlande, Madagascar..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">RÉSUMÉ D'ACTIVITÉ & FIABILITÉ PARTENAIRE</label>
-                <textarea
-                  value={supplierForm.notes}
-                  onChange={(e) => setSupplierForm({...supplierForm, notes: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none h-16 resize-none"
-                  placeholder="Qualité des bruts, délais de livraison constatés, notes douanières..."
-                />
-              </div>
-
-              <div className="pt-4 flex justify-end gap-2 border-t border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => setIsSupplierModalOpen(false)}
-                  className="px-4 py-2 bg-[#161c28] hover:bg-gray-800 text-gray-300 rounded-lg cursor-pointer"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 font-semibold bg-gradient-to-r from-[#8a733e] to-[#bda165] text-black rounded-lg cursor-pointer"
-                >
-                  Sauvegarder Fournisseur
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <SupplierFormModal
+          supplier={editingSupplier}
+          onSave={onSaveSupplier}
+          onClose={() => setIsSupplierModalOpen(false)}
+        />
       )}
 
     </div>

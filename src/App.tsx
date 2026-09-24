@@ -232,11 +232,11 @@ export default function App() {
   };
 
   // --- Supplier CRUD handlers ---
-  const handleSaveSupplier = async (savedSup: Supplier) => {
-    if (await callApi('/api/suppliers', 'POST', savedSup)) {
-      const list = await fetch('/api/suppliers').then(r => r.json());
-      setSuppliers(list);
-    }
+  const handleSaveSupplier = async (savedSup: Supplier): Promise<boolean> => {
+    if (!(await callApi('/api/suppliers', 'POST', savedSup))) return false;
+    const list = await fetch('/api/suppliers').then(r => r.json());
+    setSuppliers(list);
+    return true;
   };
 
   const handleDeleteSupplier = (id: string) => {
@@ -596,6 +596,8 @@ export default function App() {
             onClearSelection={() => setSelectedGem(null)}
             priceGuide={priceGuide}
             purchases={purchases}
+            suppliers={suppliers}
+            onSaveSupplier={handleSaveSupplier}
             onDeleteGem={handleDeleteGemstone}
             onUpdateGemInline={handleUpdateGemstoneInline}
             onGenerateCertificate={(ref) => {
@@ -616,6 +618,7 @@ export default function App() {
             onSaveLot={handleSaveLot}
             onDeleteLot={handleDeleteLot}
             suppliers={suppliers}
+            onSaveSupplier={handleSaveSupplier}
             onOpenGem={(gem) => openGemForm(gem)}
           />
         )}

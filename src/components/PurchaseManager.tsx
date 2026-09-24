@@ -8,6 +8,7 @@ import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Purchase, PurchaseArticle, Lot, Supplier, Gemstone } from '../types';
 import PhotoCapture from './PhotoCapture';
 import LotThumbnail from './LotThumbnail';
+import SupplierFormModal from './SupplierFormModal';
 import MovementHistory from './MovementHistory';
 import {
   ShoppingBag,
@@ -31,8 +32,7 @@ import {
   Check,
   Pencil,
   Lock,
-  History
-} from 'lucide-react';
+  History, UserPlus } from 'lucide-react';
 
 interface PurchaseManagerProps {
   purchases: Purchase[];
@@ -43,6 +43,7 @@ interface PurchaseManagerProps {
   onSaveLot: (l: Lot) => Promise<boolean> | void;
   onDeleteLot: (id: string) => void;
   suppliers?: Supplier[];
+  onSaveSupplier?: (s: Supplier) => Promise<boolean | void> | boolean | void;
   onOpenGem?: (gem: Gemstone) => void;
 }
 
@@ -55,6 +56,7 @@ export default function PurchaseManager({
   onSaveLot,
   onDeleteLot,
   suppliers = [],
+  onSaveSupplier,
   onOpenGem
 }: PurchaseManagerProps) {
   // Tab within this component: 'purchases' or 'all-lots'
@@ -99,40 +101,15 @@ export default function PurchaseManager({
       <p className="text-red-400 text-[10px] font-sans normal-case mt-1">{formErrors[field]}</p>
     ) : null;
 
-  // List of all suppliers for dropdown. Combine:
-  // 1. Registered suppliers (props.suppliers)
-  // 2. Suppliers from previous purchases
-  // 3. Fallbacks to standard gem suppliers so it is never empty.
-  const allSuppliers = useMemo(() => {
-    const list = new Set<string>();
-    
-    // Add registered suppliers
-    suppliers.forEach(s => {
-      if (s.name && s.name.trim()) {
-        list.add(s.name.trim());
-      }
-    });
+  // Fournisseurs proposés : uniquement ceux de l'annuaire (Tiers & CSV). Un fournisseur
+  // saisi à la main dans un ancien achat reste sélectionnable tant que cet achat est ouvert.
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const directorySuppliers = useMemo(() => {
+    const names = new Set<string>();
+    suppliers.forEach(sp => { if (sp.name && sp.name.trim()) names.add(sp.name.trim()); });
+    return Array.from(names).sort((x, y) => x.localeCompare(y, 'fr'));
+  }, [suppliers]);
 
-    // Add suppliers from historic purchases
-    purchases.forEach(p => {
-      if (p.supplier && p.supplier.trim()) {
-        list.add(p.supplier.trim());
-      }
-    });
-
-    // Add default common suppliers as backup/placeholder options if empty
-    if (list.size === 0) {
-      list.add("Chanthaburi Sapphire Syndicate");
-      list.add("Antwerp Diam Wholesale");
-      list.add("Mogok Ruby House");
-      list.add("Bogota Emerald Traders");
-      list.add("Sri Lanka Gems Export");
-    }
-
-    return Array.from(list).sort();
-  }, [suppliers, purchases]);
-
-  const [isManualSupplier, setIsManualSupplier] = useState(false);
 
   // Editing state
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
@@ -147,7 +124,6 @@ export default function PurchaseManager({
     setSupplierRef(p.supplierReference || '');
     setNoSupplierInvoice(!!p.noSupplierInvoice);
     setTempArticles(p.articles || []);
-    setIsManualSupplier(true);
     setIsAddingPurchase(true);
   };
 
@@ -294,7 +270,7 @@ export default function PurchaseManager({
     if (tempArticles.length === 0) errs.articles = "Ajoutez au moins un article d'achat avant d'enregistrer.";
     if (Object.keys(errs).length > 0) {
       showErrors(errs, errs.purchaseRef ? 'pur-ref'
-        : errs.supplier ? (isManualSupplier ? 'pur-supplier' : 'pur-supplier-select')
+        : errs.supplier ? 'pur-supplier-select'
         : errs.supplierRef ? 'pur-supplier-ref'
         : 'art-name-input');
       return;
@@ -438,21 +414,21 @@ export default function PurchaseManager({
             <button
               id="btn-trigger-add-pur"
               onClick={async () => {
-              setIsAddingPurchase(true);
-              setEditingPurchaseId(null);
-              setPurchaseRef('…'); // Numéro en cours d'attribution
-              setSupplier('');
-              setSupplierRef('');
-              setNoSupplierInvoice(false);
-              resetStoneDraft();
-              setPNotes('');
-              setTempArticles([]);
-              try {
-                const { reference } = await fetch('/api/purchases/next-reference').then(r => r.json());
-                setPurchaseRef(reference);
-              } catch {
-                setPurchaseRef(''); // Le serveur attribuera le numéro à l'enregistrement
-              }
+    setIsAddingPurchase(true);
+    setEditingPurchaseId(null);
+    setPurchaseRef('…'); // Numéro en cours d'attribution
+    setSupplier('');
+    setSupplierRef('');
+    setNoSupplierInvoice(false);
+    resetStoneDraft();
+    setPNotes('');
+    setTempArticles([]);
+    try {
+      const { reference } = await fetch('/api/purchases/next-reference').then(r => r.json());
+      setPurchaseRef(reference);
+    } catch {
+      setPurchaseRef(''); // Le serveur attribuera le numéro à l'enregistrement
+    }
             }}
               className={btnPrimary}
             >
@@ -973,50 +949,23 @@ export default function PurchaseManager({
             <div className="space-y-1 font-mono uppercase col-span-2">
               <div className="flex justify-between items-center h-5">
                 <label className="block text-gray-300">Fournisseur / Négociant de brut</label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsManualSupplier(!isManualSupplier);
-                    setSupplier('');
-                  }}
-                  className="text-[10px] text-amber-400 hover:underline hover:text-amber-300 transition-colors normal-case animate-pulse"
-                >
-                  {isManualSupplier ? "🔌 Choisir dans la liste" : "✍️ Saisie libre"}
-                </button>
               </div>
-              
-              {isManualSupplier ? (
-                <input
-                  id="pur-supplier"
-                  type="text"
-                  value={supplier}
-                  onChange={(e) => { setSupplier(e.target.value); clearError('supplier'); }}
-                  placeholder="ex: Antwerp Diam Wholesale, Chanthaburi Syndicate"
-                  className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplier')} text-white rounded focus:border-[#b4985c]`}
-                />
-              ) : (
-                <div className="relative">
+
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
                   <select
                     id="pur-supplier-select"
                     value={supplier}
-                    onChange={(e) => {
-                      clearError('supplier');
-                      if (e.target.value === "__NEW__") {
-                        setIsManualSupplier(true);
-                        setSupplier('');
-                      } else {
-                        setSupplier(e.target.value);
-                      }
-                    }}
+                    onChange={(e) => { clearError('supplier'); setSupplier(e.target.value); }}
                     className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplier')} text-white rounded focus:border-[#b4985c] cursor-pointer appearance-none pr-8`}
                   >
                     <option value="">-- Choisir un fournisseur --</option>
-                    {allSuppliers.map(supName => (
-                      <option key={supName} value={supName}>
-                        {supName}
-                      </option>
+                    {supplier && !directorySuppliers.includes(supplier) && (
+                      <option value={supplier}>{supplier} (hors annuaire)</option>
+                    )}
+                    {directorySuppliers.map(supName => (
+                      <option key={supName} value={supName}>{supName}</option>
                     ))}
-                    <option value="__NEW__" className="text-amber-400 font-bold font-mono">+ Nouveau fournisseur / Saisie libre...</option>
                   </select>
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
                     <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
@@ -1024,7 +973,18 @@ export default function PurchaseManager({
                     </svg>
                   </div>
                 </div>
-              )}
+                {onSaveSupplier && (
+                  <button
+                    type="button"
+                    id="quick-new-supplier-button"
+                    onClick={() => setIsSupplierModalOpen(true)}
+                    title="Nouveau fournisseur"
+                    className="shrink-0 px-3 py-2 bg-[#171e2c] hover:bg-[#1f283d] border border-[#27354d] text-[#bda165] rounded transition-colors"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               <FieldError field="supplier" />
             </div>
             <div className="space-y-1 font-mono uppercase">
@@ -1677,6 +1637,20 @@ export default function PurchaseManager({
         </div>
       )}
 
+
+      {isSupplierModalOpen && onSaveSupplier && (
+        <SupplierFormModal
+          supplier={null}
+          onSave={async (newSupplier) => {
+            const ok = await onSaveSupplier(newSupplier);
+            if (ok === false) return false;
+            setSupplier(newSupplier.name);
+            clearError('supplier');
+            return true;
+          }}
+          onClose={() => setIsSupplierModalOpen(false)}
+        />
+      )}
     </div>
   );
 }
