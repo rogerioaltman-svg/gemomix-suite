@@ -157,9 +157,13 @@ export default function InventoryManager({
   const [inclusions, setInclusions] = useState<string[]>([]);
   const [newInclusion, setNewInclusion] = useState('');
   const [image, setImage] = useState('');
+  // Faux tant que la photo d'une pierre existante n'est pas chargée : on n'envoie alors
+  // pas le champ image à l'enregistrement, pour ne jamais écraser la photo stockée
+  const [imageReady, setImageReady] = useState(true);
 
   // Manage selection update
   useEffect(() => {
+    let cancelled = false;
     if (selectedGem) {
       setId(selectedGem.id);
       setReference(selectedGem.reference);
@@ -194,10 +198,21 @@ export default function InventoryManager({
       setDescription(selectedGem.description);
       setInclusions(selectedGem.inclusions || []);
       setImage(selectedGem.image || '');
+      if (selectedGem.hasImage && !selectedGem.image) {
+        setImageReady(false);
+        fetch(`/api/gemstones/${selectedGem.id}/image`)
+          .then(r => (r.ok ? r.json() : { image: null }))
+          .then(d => { if (!cancelled) { setImage(d.image || ''); setImageReady(true); } })
+          .catch(() => { if (!cancelled) setImageReady(true); });
+      } else {
+        setImageReady(true);
+      }
     } else {
       // Set to blank with generic next reference
       resetForm();
+      setImageReady(true);
     }
+    return () => { cancelled = true; };
   }, [selectedGem, gemstones]);
 
   // Autofill properties on Variety selection
@@ -328,7 +343,9 @@ export default function InventoryManager({
       dateAdded: selectedGem?.dateAdded || new Date().toISOString().split('T')[0],
       description: description || 'Pas de description clinique additionnelle.',
       inclusions,
-      image: image || undefined,
+      // '' = photo retirée ; undefined = photo non chargée, le serveur conserve l'existante
+      image: imageReady ? image : undefined,
+      hasImage: imageReady ? !!image : selectedGem?.hasImage,
       recuttings: selectedGem?.recuttings,
       // Traçabilité conservée : ne jamais écraser le lien vers l'achat d'origine
       sourcePurchaseId: selectedGem?.sourcePurchaseId,

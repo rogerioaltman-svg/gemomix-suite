@@ -6,6 +6,7 @@
 import React, { useState, useMemo } from 'react';
 import { Purchase, PurchaseArticle, Lot, Supplier, Gemstone } from '../types';
 import PhotoCapture from './PhotoCapture';
+import LotThumbnail from './LotThumbnail';
 import MovementHistory from './MovementHistory';
 import {
   ShoppingBag,
@@ -165,6 +166,16 @@ export default function PurchaseManager({
     setLotDest(lot.destination || '');
     setLotNotes(lot.notes || '');
     setLotImage(lot.image || '');
+    if (lot.hasImage && !lot.image) {
+      // La liste ne transporte pas la photo : on la charge, sans l'écraser d'ici là
+      setLotImageReady(false);
+      fetch(`/api/lots/${lot.id}/image`)
+        .then(r => (r.ok ? r.json() : { image: null }))
+        .then(d => { setLotImage(d.image || ''); setLotImageReady(true); })
+        .catch(() => setLotImageReady(true));
+    } else {
+      setLotImageReady(true);
+    }
   };
 
   const [pDate, setPDate] = useState(new Date().toISOString().split('T')[0]);
@@ -212,6 +223,7 @@ export default function PurchaseManager({
   const [lotDest, setLotDest] = useState('Lot de tri #1');
   const [lotNotes, setLotNotes] = useState('');
   const [lotImage, setLotImage] = useState('');
+  const [lotImageReady, setLotImageReady] = useState(true);
 
   // Ergonomie du tri : détails repliés par défaut, confirmation sur place, réf auto
   const [showLotDetails, setShowLotDetails] = useState(false);
@@ -363,7 +375,9 @@ export default function PurchaseManager({
       destination: lotDest.trim() || 'Lot de tri',
       dateCreated: editingLotId ? (lots.find(l => l.id === editingLotId)?.dateCreated || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
       notes: lotNotes.trim() || undefined,
-      image: lotImage || undefined
+      // '' = photo retirée ; undefined = photo non chargée, le serveur conserve l'existante
+      image: lotImageReady ? lotImage : undefined,
+      hasImage: lotImageReady ? !!lotImage : editingLotId ? lots.find(l => l.id === editingLotId)?.hasImage : undefined
     };
 
     const wasEditing = !!editingLotId;
@@ -805,14 +819,7 @@ export default function PurchaseManager({
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex gap-2.5 items-center">
-                          {lot.image && (
-                            <img 
-                              src={lot.image} 
-                              alt="Aperçu du lot"
-                              referrerPolicy="no-referrer"
-                              className="w-12 h-12 object-cover rounded-lg border border-gray-800 bg-black shrink-0 animate-fadeIn"
-                            />
-                          )}
+                          <LotThumbnail lot={lot} />
                           <div>
                             <div className="flex items-center gap-1.5">
                               <span className="font-bold text-white text-base">{lot.reference}</span>
@@ -1542,14 +1549,7 @@ export default function PurchaseManager({
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex gap-2.5 items-center">
-                        {lot.image && (
-                          <img 
-                            src={lot.image} 
-                            alt="Aperçu du lot" 
-                            referrerPolicy="no-referrer"
-                            className="w-12 h-12 object-cover rounded-lg border border-gray-800 bg-black shrink-0 animate-fadeIn"
-                          />
-                        )}
+                        <LotThumbnail lot={lot} />
                         <div>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-bold text-white text-base">{lot.reference}</span>
