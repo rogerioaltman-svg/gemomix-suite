@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Purchase, PurchaseArticle, Lot, Supplier, Gemstone } from '../types';
 import PhotoCapture from './PhotoCapture';
@@ -45,6 +45,8 @@ interface PurchaseManagerProps {
   suppliers?: Supplier[];
   onSaveSupplier?: (s: Supplier) => Promise<boolean | void> | boolean | void;
   onOpenGem?: (gem: Gemstone) => void;
+  autoOpenNewPurchase?: boolean;
+  onAutoOpenHandled?: () => void;
 }
 
 export default function PurchaseManager({
@@ -57,7 +59,9 @@ export default function PurchaseManager({
   onDeleteLot,
   suppliers = [],
   onSaveSupplier,
-  onOpenGem
+  onOpenGem,
+  autoOpenNewPurchase,
+  onAutoOpenHandled
 }: PurchaseManagerProps) {
   // Tab within this component: 'purchases' or 'all-lots'
   const [managerTab, setManagerTab] = useState<'purchases' | 'all-lots'>('purchases');
@@ -403,17 +407,8 @@ export default function PurchaseManager({
   // All gemstone types helper
   const gemstoneTypesList = ['Saphir', 'Rubis', 'Émeraude', 'Diamant', 'Tanzanite', 'Spinelle', 'Tourmaline', 'Grenat', 'Autre'];
 
-  return (
-    <div className="space-y-6">
-      
-      <PageHeader
-        title="Achats & Lots"
-        description="Registre de vos acquisitions et tri des colis bruts en lots."
-        actions={
-          managerTab === 'purchases' && !isAddingPurchase && !activeTriageArticle ? (
-            <button
-              id="btn-trigger-add-pur"
-              onClick={async () => {
+  // Ouvre la saisie d'un nouvel achat (bouton de l'en-tête, ou arrivée depuis le Tableau de bord)
+  const startNewPurchase = async () => {
     setIsAddingPurchase(true);
     setEditingPurchaseId(null);
     setPurchaseRef('…'); // Numéro en cours d'attribution
@@ -429,7 +424,28 @@ export default function PurchaseManager({
     } catch {
       setPurchaseRef(''); // Le serveur attribuera le numéro à l'enregistrement
     }
-            }}
+  };
+
+  // Arrivée depuis le Tableau de bord : le formulaire s'ouvre directement, une seule fois
+  useEffect(() => {
+    if (autoOpenNewPurchase) {
+      startNewPurchase();
+      onAutoOpenHandled?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      
+      <PageHeader
+        title="Achats & Lots"
+        description="Registre de vos acquisitions et tri des colis bruts en lots."
+        actions={
+          managerTab === 'purchases' && !isAddingPurchase && !activeTriageArticle ? (
+            <button
+              id="btn-trigger-add-pur"
+              onClick={startNewPurchase}
               className={btnPrimary}
             >
               <Plus className="h-4 w-4" />

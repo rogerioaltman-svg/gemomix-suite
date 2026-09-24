@@ -18,7 +18,7 @@ interface DashboardProps {
   gemstones: Gemstone[];
   lots?: Lot[];
   purchases?: Purchase[];
-  onNavigateToTab: (tab: string) => void;
+  onNewPurchase: () => void;
   onNewGem: () => void;
 }
 
@@ -26,7 +26,7 @@ export default function Dashboard({
   gemstones = [], 
   lots = [], 
   purchases = [], 
-  onNavigateToTab, 
+  onNewPurchase, 
   onNewGem 
 }: DashboardProps) {
 
@@ -135,7 +135,7 @@ export default function Dashboard({
               <Plus className="h-3.5 w-3.5" />
               <span>Enregistrer une pierre</span>
             </button>
-            <button id="btn-nav-purchases" onClick={() => onNavigateToTab('purchases')} className={btnPrimary}>
+            <button id="btn-nav-purchases" onClick={onNewPurchase} className={btnPrimary}>
               <Plus className="h-3.5 w-3.5" />
               <span>Saisir un achat</span>
             </button>

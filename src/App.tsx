@@ -57,6 +57,9 @@ export default function App() {
   // Onglet Inventaire : 'list' = liste du stock, 'form' = fiche pierre (création/édition)
   const [inventoryMode, setInventoryMode] = useState<'list' | 'form'>('list');
 
+  // Le Tableau de bord ouvre directement la saisie d'un achat (consommé par PurchaseManager)
+  const [autoOpenPurchase, setAutoOpenPurchase] = useState(false);
+
   const openGemForm = (gem: Gemstone | null) => {
     setSelectedGem(gem);
     setInventoryMode('form');
@@ -562,7 +565,7 @@ export default function App() {
             gemstones={gemstones}
             lots={lots}
             purchases={purchases}
-            onNavigateToTab={setSelectedTab}
+            onNewPurchase={() => { setAutoOpenPurchase(true); setSelectedTab('purchases'); }}
             onNewGem={() => openGemForm(null)}
           />
         )}
@@ -620,6 +623,8 @@ export default function App() {
             suppliers={suppliers}
             onSaveSupplier={handleSaveSupplier}
             onOpenGem={(gem) => openGemForm(gem)}
+            autoOpenNewPurchase={autoOpenPurchase}
+            onAutoOpenHandled={() => setAutoOpenPurchase(false)}
           />
         )}
 
