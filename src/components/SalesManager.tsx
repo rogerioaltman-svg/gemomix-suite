@@ -73,6 +73,23 @@ export default function SalesManager({
     setIsQuickClientModalOpen(false);
   };
 
+  // Identité du vendeur pour l'impression : uniquement ce qui est renseigné dans les
+  // Paramètres, jamais de valeur de remplacement inventée sur un document légal
+  const sellerAddress = [
+    companySettings?.address,
+    [companySettings?.postalCode, companySettings?.city].filter(Boolean).join(' '),
+    companySettings?.country
+  ].filter(Boolean).join(', ');
+  const sellerContact = [
+    companySettings?.phone ? `Tél : ${companySettings.phone}` : '',
+    companySettings?.email
+  ].filter(Boolean).join(' · ');
+  const sellerLegalIds = [
+    companySettings?.siret ? `SIRET : ${companySettings.siret}` : '',
+    companySettings?.vatNumber ? `TVA : ${companySettings.vatNumber}` : ''
+  ].filter(Boolean).join(' · ');
+  const sellerFooterLine = [companySettings?.name, sellerLegalIds].filter(Boolean).join(' · ');
+
   // Available (Disponible) gemstones for invoicing
   const availableGemstones = gemstones.filter(g => g.status === 'Disponible');
 
@@ -873,19 +890,22 @@ export default function SalesManager({
                 <div className="flex items-center gap-2 mb-2">
 
                   <h1 className="text-2xl font-black tracking-wider uppercase font-sans">
-                    {companySettings?.name || "GemoPhy Suite"}
+                    {companySettings?.name || "Société non renseignée"}
                   </h1>
                 </div>
                 <div className="text-xs text-stone-500 font-sans space-y-0.5">
-                  <p>{companySettings?.address || '15 Rue de la Victoire'}, {companySettings?.postalCode} {companySettings?.city || 'Paris'}, {companySettings?.country || 'France'}</p>
-                  <p>Tél: {companySettings?.phone || '+33 1 45 66 77 88'}{companySettings?.email ? ` · ${companySettings.email}` : ''}</p>
-                  <p>SIRET: {companySettings?.siret || '884 102 334 00012'} · TVA: {companySettings?.vatNumber || 'FR12884102334'}</p>
+                  {sellerAddress && <p>{sellerAddress}</p>}
+                  {sellerContact && <p>{sellerContact}</p>}
+                  {sellerLegalIds && <p>{sellerLegalIds}</p>}
+                  {!companySettings?.name && (
+                    <p className="text-amber-600 no-print">Renseignez votre société dans Paramètres pour compléter cet en-tête.</p>
+                  )}
                 </div>
               </div>
 
               <div className="text-right sm:text-right w-full sm:w-auto">
                 <span className="inline-block bg-gray-100 text-gray-900 border border-gray-300 font-mono text-[9px] px-3 py-1 font-bold rounded mb-4 uppercase tracking-wider print:bg-transparent print:border-black">
-                  FACTURE DE EXPERTISE
+                  FACTURE
                 </span>
                 <div className="text-stone-500 text-xs font-sans">
                   <p>Numéro Facture : <span className="font-mono font-bold text-stone-900 text-sm block">{selectedInvoice.invoiceNumber}</span></p>
@@ -965,7 +985,6 @@ export default function SalesManager({
                   <div>
                     <span className="block font-mono text-[9px] uppercase tracking-wider text-stone-500 font-bold">OBSERVATIONS & MENTIONS LÉGALES</span>
                     <p className="text-stone-500 mt-1 leading-relaxed leading-tight text-[11px] whitespace-pre-wrap">{selectedInvoice.notes ?? ""}</p>
-                    <p className="text-[9px] text-stone-400 mt-2 font-mono">Dispensé d’immatriculation au registre du commerce et des sociétés (RCS).</p>
                   </div>
                 )}
               </div>
@@ -1004,18 +1023,15 @@ export default function SalesManager({
               </div>
             </div>
 
-            {/* Footer with stamp placeholder */}
-            <div className="mt-16 pt-8 border-t border-stone-200 flex justify-between items-start text-[9px] text-stone-400 font-mono uppercase tracking-wider">
-              <div>
-                <span>Document Généré par {companySettings?.name || 'GemoPhy v1.0'}</span>
-                <span className="block">Signature de l'Expert Lapidaire agréé HRD / GIA</span>
-              </div>
-              <div className="text-right">
-                <span>Tampon d'Authenticité Clinique</span>
-                <div className="h-10 w-24 border border-stone-200 border-dashed rounded mt-1.5 flex items-center justify-center text-stone-300">
-                  {companySettings?.name ? `[${companySettings.name}]` : "GEMOPHY SEAL"}
-                </div>
-              </div>
+            {/* Pied de page : mentions légales de paiement et identité du vendeur */}
+            <div className="mt-16 pt-6 border-t border-stone-200 space-y-1.5 text-[9px] text-stone-500 leading-relaxed font-sans">
+              <p>
+                Pénalités de retard : trois fois le taux d'intérêt légal, exigibles sans rappel. Indemnité forfaitaire
+                pour frais de recouvrement en cas de retard de paiement : 40 €. Escompte pour paiement anticipé : néant.
+              </p>
+              {sellerFooterLine && (
+                <p className="font-mono uppercase tracking-wider text-stone-400">{sellerFooterLine}</p>
+              )}
             </div>
 
           </div>
