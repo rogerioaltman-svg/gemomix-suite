@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Supplier, Client } from '../types';
+import ClientFormModal from './ClientFormModal';
 import { 
   Users, 
   UserPlus, 
@@ -26,7 +27,7 @@ interface ContactManagerProps {
   clients: Client[];
   onSaveSupplier: (s: Supplier) => Promise<void> | void;
   onDeleteSupplier: (id: string) => Promise<void> | void;
-  onSaveClient: (c: Client) => Promise<void> | void;
+  onSaveClient: (c: Client) => Promise<boolean | void> | boolean | void;
   onDeleteClient: (id: string) => Promise<void> | void;
 }
 
@@ -60,19 +61,6 @@ export default function ContactManager({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handlers for Add/Edit Client
-  const [clientForm, setClientForm] = useState({
-    name: '',
-    contactName: '',
-    email: '',
-    phone: '',
-    address: '',
-    city: '',
-    postalCode: '',
-    country: 'France',
-    vatNumber: '',
-    notes: ''
-  });
-
   // Handlers for Add/Edit Supplier
   const [supplierForm, setSupplierForm] = useState({
     name: '',
@@ -89,35 +77,11 @@ export default function ContactManager({
   // Open forms helper
   const handleOpenNewClient = () => {
     setEditingClient(null);
-    setClientForm({
-      name: '',
-      contactName: '',
-      email: '',
-      phone: '',
-      address: '',
-      city: '',
-      postalCode: '',
-      country: 'France',
-      vatNumber: '',
-      notes: ''
-    });
     setIsClientModalOpen(true);
   };
 
   const handleOpenEditClient = (c: Client) => {
     setEditingClient(c);
-    setClientForm({
-      name: c.name || '',
-      contactName: c.contactName || '',
-      email: c.email || '',
-      phone: c.phone || '',
-      address: c.address || '',
-      city: c.city || '',
-      postalCode: c.postalCode || '',
-      country: c.country || 'France',
-      vatNumber: c.vatNumber || '',
-      notes: c.notes || ''
-    });
     setIsClientModalOpen(true);
   };
 
@@ -151,29 +115,6 @@ export default function ContactManager({
       notes: s.notes || ''
     });
     setIsSupplierModalOpen(true);
-  };
-
-  const handleSaveClientSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!clientForm.name) return;
-
-    const data: Client = {
-      id: editingClient ? editingClient.id : `CLI-${Date.now()}`,
-      name: clientForm.name,
-      contactName: clientForm.contactName || undefined,
-      email: clientForm.email || undefined,
-      phone: clientForm.phone || undefined,
-      address: clientForm.address || undefined,
-      city: clientForm.city || undefined,
-      postalCode: clientForm.postalCode || undefined,
-      country: clientForm.country || 'France',
-      vatNumber: clientForm.vatNumber || undefined,
-      notes: clientForm.notes || undefined,
-      dateAdded: editingClient ? editingClient.dateAdded : new Date().toISOString()
-    };
-
-    await onSaveClient(data);
-    setIsClientModalOpen(false);
   };
 
   const handleSaveSupplierSubmit = async (e: React.FormEvent) => {
@@ -953,153 +894,13 @@ export default function ContactManager({
         </div>
       )}
 
-      {/* NEW/EDIT CLIENT MODAL */}
+      {/* NEW/EDIT CLIENT MODAL : fenêtre partagée avec la Facturation */}
       {isClientModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#050608]/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#121620] border border-[#232f46] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-            <div className="p-6 bg-[#171d2b] border-b border-[#212a3d] flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <Users className="h-5 w-5 text-blue-400" />
-                <h3 className="text-base font-bold text-white">
-                  {editingClient ? "Modifier le Client" : "Nouveau Client VIP"}
-                </h3>
-              </div>
-              <button onClick={() => setIsClientModalOpen(false)} className="text-gray-500 hover:text-white cursor-pointer">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveClientSubmit} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">RAISON SOCIALE / NOM COMPLET *</label>
-                <input
-                  type="text"
-                  required
-                  value={clientForm.name}
-                  onChange={(e) => setClientForm({...clientForm, name: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none focus:border-[#bda165]"
-                  placeholder="ex: Atelier Joaillier Paris SAS"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">CONTACT PRINCIPAL</label>
-                  <input
-                    type="text"
-                    value={clientForm.contactName}
-                    onChange={(e) => setClientForm({...clientForm, contactName: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="Prénom & Nom"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">NUMÉRO DE TVA</label>
-                  <input
-                    type="text"
-                    value={clientForm.vatNumber}
-                    onChange={(e) => setClientForm({...clientForm, vatNumber: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-[#e0b760] font-mono rounded-lg focus:outline-none"
-                    placeholder="FRxxxxxxxxxxx"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">EMAIL DE CONTACT</label>
-                  <input
-                    type="email"
-                    value={clientForm.email}
-                    onChange={(e) => setClientForm({...clientForm, email: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="contact@client.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">TÉLÉPHONE DIRECT</label>
-                  <input
-                    type="text"
-                    value={clientForm.phone}
-                    onChange={(e) => setClientForm({...clientForm, phone: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="+33 6 ..."
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">ADRESSE DE LEURS LOCAUX</label>
-                <input
-                  type="text"
-                  value={clientForm.address}
-                  onChange={(e) => setClientForm({...clientForm, address: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                  placeholder="Numéro, rue, appartement..."
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div className="col-span-1">
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">CODE POSTAL</label>
-                  <input
-                    type="text"
-                    value={clientForm.postalCode}
-                    onChange={(e) => setClientForm({...clientForm, postalCode: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="75001"
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">VILLE</label>
-                  <input
-                    type="text"
-                    value={clientForm.city}
-                    onChange={(e) => setClientForm({...clientForm, city: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="Paris"
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">PAYS</label>
-                  <input
-                    type="text"
-                    value={clientForm.country}
-                    onChange={(e) => setClientForm({...clientForm, country: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none"
-                    placeholder="France"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">OBSERVATIONS (NOTES DE CONFIANCE)</label>
-                <textarea
-                  value={clientForm.notes}
-                  onChange={(e) => setClientForm({...clientForm, notes: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded-lg focus:outline-none h-16 resize-none"
-                  placeholder="Préférence de taille, calibrage spécifique récurrent..."
-                />
-              </div>
-
-              <div className="pt-4 flex justify-end gap-2 border-t border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => setIsClientModalOpen(false)}
-                  className="px-4 py-2 bg-[#161c28] hover:bg-gray-800 text-gray-300 rounded-lg cursor-pointer"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 font-semibold bg-gradient-to-r from-[#8a733e] to-[#bda165] text-black rounded-lg cursor-pointer"
-                >
-                  Sauvegarder Client
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ClientFormModal
+          client={editingClient}
+          onSave={onSaveClient}
+          onClose={() => setIsClientModalOpen(false)}
+        />
       )}
 
       {/* NEW/EDIT SUPPLIER MODAL */}

@@ -254,11 +254,11 @@ export default function App() {
   };
 
   // --- Client CRUD handlers ---
-  const handleSaveClient = async (savedCli: Client) => {
-    if (await callApi('/api/clients', 'POST', savedCli)) {
-      const list = await fetch('/api/clients').then(r => r.json());
-      setClients(list);
-    }
+  const handleSaveClient = async (savedCli: Client): Promise<boolean> => {
+    if (!(await callApi('/api/clients', 'POST', savedCli))) return false;
+    const list = await fetch('/api/clients').then(r => r.json());
+    setClients(list);
+    return true;
   };
 
   const handleDeleteClient = (id: string) => {
