@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { TrashItem, TrashEntityType } from '../types';
 import { Trash2, RotateCcw, Diamond, ShoppingBag, Layers, Truck, Users, Receipt, Gem, Inbox, Sparkles } from 'lucide-react';
 
@@ -60,21 +61,11 @@ export default function TrashManager({ items, onRestore }: TrashManagerProps) {
 
   return (
     <div className="space-y-6 animate-fadeIn">
+      <PageHeader
+        title="Corbeille"
+        description="Rien n'est jamais supprimé définitivement dans GemoMix Suite. Tout élément retiré (pierre, achat, lot, fournisseur, client, facture, palier du barème) reste consultable et restaurable ici, sans limite de durée."
+      />
       <div className="bg-[#121620] border border-[#212a3d] rounded-2xl p-6 sm:p-8 shadow-xl">
-        <div className="flex items-center gap-3 mb-6 border-b border-[#212a3d] pb-6">
-          <div className="p-3 bg-[#bda165]/10 text-[#bda165] rounded-xl">
-            <Trash2 className="h-6 w-6" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold font-sans text-white">Corbeille</h2>
-            <p className="text-xs text-gray-400 mt-1 max-w-lg">
-              Rien n'est jamais supprimé définitivement dans GemoMix Suite. Tout élément retiré
-              (pierre, achat, lot, fournisseur, client, facture, palier du barème) reste consultable
-              et restaurable ici, sans limite de durée.
-            </p>
-          </div>
-        </div>
-
         {items.length === 0 ? (
           <div className="text-center py-12">
             <Inbox className="h-10 w-10 text-gray-700 mx-auto mb-3" />

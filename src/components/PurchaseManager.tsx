@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Purchase, PurchaseArticle, Lot, Supplier, Gemstone } from '../types';
 import PhotoCapture from './PhotoCapture';
 import LotThumbnail from './LotThumbnail';
@@ -429,6 +430,39 @@ export default function PurchaseManager({
   return (
     <div className="space-y-6">
       
+      <PageHeader
+        title="Achats & Lots"
+        description="Registre de vos acquisitions et tri des colis bruts en lots."
+        actions={
+          managerTab === 'purchases' && !isAddingPurchase && !activeTriageArticle ? (
+            <button
+              id="btn-trigger-add-pur"
+              onClick={async () => {
+              setIsAddingPurchase(true);
+              setEditingPurchaseId(null);
+              setPurchaseRef('…'); // Numéro en cours d'attribution
+              setSupplier('');
+              setSupplierRef('');
+              setNoSupplierInvoice(false);
+              resetStoneDraft();
+              setPNotes('');
+              setTempArticles([]);
+              try {
+                const { reference } = await fetch('/api/purchases/next-reference').then(r => r.json());
+                setPurchaseRef(reference);
+              } catch {
+                setPurchaseRef(''); // Le serveur attribuera le numéro à l'enregistrement
+              }
+            }}
+              className={btnPrimary}
+            >
+              <Plus className="h-4 w-4" />
+              <span>Saisir un nouvel achat</span>
+            </button>
+          ) : undefined
+        }
+      />
+
       {/* Tab select bar */}
       <div className="flex justify-between items-center bg-[#111520] p-4 rounded-xl border border-[#212a3d]">
         <div className="flex gap-2">
@@ -474,34 +508,6 @@ export default function PurchaseManager({
           </button>
         </div>
 
-        {managerTab === 'purchases' && !isAddingPurchase && !activeTriageArticle && (
-          <button
-            id="btn-trigger-add-pur"
-            onClick={async () => {
-              setIsAddingPurchase(true);
-              setEditingPurchaseId(null);
-              setPurchaseRef('…'); // Numéro en cours d'attribution
-              setSupplier('');
-              setSupplierRef('');
-              setNoSupplierInvoice(false);
-              resetStoneDraft();
-    setNoSupplierInvoice(false);
-    resetStoneDraft();
-              setPNotes('');
-              setTempArticles([]);
-              try {
-                const { reference } = await fetch('/api/purchases/next-reference').then(r => r.json());
-                setPurchaseRef(reference);
-              } catch {
-                setPurchaseRef(''); // Le serveur attribuera le numéro à l'enregistrement
-              }
-            }}
-            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-lg flex items-center gap-1.5 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Saisir un Nouvel Achat</span>
-          </button>
-        )}
       </div>
 
       {/* 1. TRIAGE WORKSPACE DETAILED SUB-VIEW */}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { CompanySettings, PriceGuideEntry } from '../types';
 import { Settings, Save, MapPin, Phone, Mail, Building2, Globe, CheckCircle, Database, Gem, Pencil, Trash2, Plus, X } from 'lucide-react';
 
@@ -104,19 +105,11 @@ export default function SettingsManager({ settings, onSaveSettings, priceGuide =
 
   return (
     <div className="space-y-6 animate-fadeIn">
+      <PageHeader
+        title="Paramètres de l'entreprise"
+        description="Ces informations apparaîtront sur vos factures, devis, certificats et autres documents officiels générés par l'application."
+      />
       <div className="bg-[#121620] border border-[#212a3d] rounded-2xl p-6 sm:p-8 shadow-xl">
-        <div className="flex items-center gap-3 mb-6 border-b border-[#212a3d] pb-6">
-          <div className="p-3 bg-[#bda165]/10 text-[#bda165] rounded-xl">
-            <Settings className="h-6 w-6" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold font-sans text-white">Paramètres de l'Entreprise</h2>
-            <p className="text-xs text-gray-400 mt-1 max-w-lg">
-              Ces informations apparaîtront sur vos factures, devis, certificats et autres documents officiels générés par l'application.
-            </p>
-          </div>
-        </div>
-
         <form onSubmit={handleSubmit} className="space-y-6 text-sm">
           {/* General Information */}
           <div className="bg-[#171e2c] border border-[#27354d] rounded-xl p-5 space-y-4">

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Client, Gemstone, SalesInvoice, InvoiceItem, CompanySettings } from '../types';
 import ClientFormModal from './ClientFormModal';
 import { 
@@ -297,40 +298,24 @@ export default function SalesManager({
   return (
     <div className="space-y-6">
       
-      {/* HEADER SECTION (hidden during print) */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#101421] border border-[#1f283d] rounded-2xl p-5 shadow-sm no-print">
-        <div>
-          <div className="flex items-center gap-2 text-[#e0b760] font-mono text-[10px] tracking-widest uppercase">
-            <FileText className="h-4 w-4" />
-            <span>Facturation Commerciale & Sortie de Stock</span>
-          </div>
-          <h2 className="text-xl font-bold font-sans tracking-tight text-white mt-1">
-            Facturation de Vente
-          </h2>
-          <p className="text-xs text-gray-400 mt-1 max-w-2xl">
-            Émettez vos factures de vente et déduisez automatiquement les pierres vendues du stock d'inventaire.
-          </p>
-        </div>
-
-        {viewMode === 'list' ? (
-          <button
-            onClick={() => setViewMode('create')}
-            id="btn-open-create-invoice"
-            className="w-full md:w-auto px-4 py-2 text-xs font-semibold bg-gradient-to-r from-[#8a733e] to-[#bda165] hover:opacity-90 text-black rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Créer une Facture</span>
-          </button>
-        ) : (
-          <button
-            onClick={() => { setViewMode('list'); setSelectedInvoice(null); }}
-            className="w-full md:w-auto px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 hover:text-white rounded-lg flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Retour à la liste</span>
-          </button>
-        )}
-      </div>
+      <PageHeader
+        className="no-print"
+        title="Facturation de vente"
+        description="Émettez vos factures de vente et déduisez automatiquement les pierres vendues du stock d'inventaire."
+        actions={
+          viewMode === 'list' ? (
+            <button id="btn-open-create-invoice" onClick={() => setViewMode('create')} className={btnPrimary}>
+              <Plus className="h-4 w-4" />
+              <span>Créer une facture</span>
+            </button>
+          ) : (
+            <button onClick={() => { setViewMode('list'); setSelectedInvoice(null); }} className={btnSecondary}>
+              <ArrowLeft className="h-4 w-4" />
+              <span>Retour à la liste</span>
+            </button>
+          )
+        }
+      />
 
       {/* VIEW 1: LISTING */}
       {viewMode === 'list' && (

@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Gemstone, CompanySettings } from '../types';
 import { Award, Printer, Shield, Eye, Gem, ArrowRight, HelpCircle } from 'lucide-react';
 
@@ -35,41 +36,48 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
 
   if (!activeGem) {
     return (
-      <div className="bg-[#121620] border border-[#212a3d] p-8 text-center text-gray-400 rounded-xl">
-        <HelpCircle className="h-12 w-12 mx-auto text-gray-600 mb-3" />
-        <p>Veuillez d'abord enregistrer ou lister des pierres pour pouvoir imprimer un certificat d'authenticité.</p>
+      <div className="space-y-6" id="certificate-tab">
+        <PageHeader
+          title="Certificats"
+          description="Sélectionnez une pierre de l'inventaire et éditez son rapport d'authenticité."
+        />
+        <div className="bg-[#121620] border border-[#212a3d] p-8 text-center text-gray-400 rounded-xl">
+          <HelpCircle className="h-12 w-12 mx-auto text-gray-600 mb-3" />
+          <p>Veuillez d'abord enregistrer ou lister des pierres pour pouvoir imprimer un certificat d'authenticité.</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6" id="certificate-tab">
-      <div className="p-4 bg-[#111520] border border-[#212a3d] rounded-xl flex flex-col md:flex-row gap-4 items-center justify-between no-print">
-        <div className="flex gap-2 items-center text-sm text-gray-300">
-          <Award className="h-5 w-5 text-yellow-500" />
-          <span>Sélectionnez la pierre et éditez un rapport d'authenticité officiel GemoPhy :</span>
-        </div>
-        <div className="flex gap-2 w-full md:w-auto">
-          <select 
+      <PageHeader
+        className="no-print"
+        title="Certificats"
+        description="Sélectionnez une pierre de l'inventaire et éditez son rapport d'authenticité."
+        actions={
+          <>
+            <select 
             id="certify-stone-select"
             value={selectedRef}
             onChange={(e) => setSelectedRef(e.target.value)}
-            className="px-3 py-1.5 text-xs bg-[#171e2c] border border-[#27354d] text-yellow-400 font-mono rounded select-none cursor-pointer"
+            className="px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-yellow-400 font-mono rounded select-none cursor-pointer"
           >
             {gemstones.map(g => (
               <option key={g.id} value={g.reference}>{g.reference} - {g.type} ({g.weight} ct)</option>
             ))}
           </select>
-          <button 
+            <button 
             id="btn-print-doc"
             onClick={handlePrint}
-            className="px-4 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-bold text-xs rounded flex items-center justify-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+            className={btnPrimary}
           >
             <Printer className="h-3.5 w-3.5" />
             <span>Imprimer</span>
           </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <div className="flex justify-center bg-[#090b10] py-6 rounded-xl overflow-x-auto no-print">
         <div 

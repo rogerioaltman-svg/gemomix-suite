@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { MINERALS_DATABASE } from '../data';
 import { Search, Flame, Sliders, Hash, Layers, HelpCircle, AlertTriangle } from 'lucide-react';
 
@@ -65,14 +66,12 @@ export default function IdentificationLab() {
   }, [targetRI, targetSG, tolerance]);
 
   return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Identificateur"
+        description="Déterminez l'espèce minérale d'une gemme brute ou taillée d'après ses propriétés optiques et physiques."
+      />
     <div className="bg-[#121620] border border-[#212a3d] rounded-xl overflow-hidden shadow-2xl" id="identification-tab">
-      <div className="p-5 border-b border-[#212a3d] bg-[#171d2b]">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
-          <span>🔍 Laboratoire de Caractérisation & Identification</span>
-        </h2>
-        <p className="text-xs text-gray-400">Déterminez l'espèce minérale d'une gemme brute ou taillée d'après ses propriétés optiques et physiques.</p>
-      </div>
-
       <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left pane: interactive analyzers */}
         <div className="space-y-4 lg:col-span-1 bg-[#111520] p-4 rounded-xl border border-[#212a3d]">
@@ -221,6 +220,7 @@ export default function IdentificationLab() {
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 }

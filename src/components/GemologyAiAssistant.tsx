@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Sparkles, Send, Bot, User, Brain, MessageSquareCode, CircleHelp } from 'lucide-react';
 
 interface ChatMessage {
@@ -86,20 +87,12 @@ export default function GemologyAiAssistant() {
   ];
 
   return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Lab Copilot"
+        description="Assistant gemmologue IA : expertise scientifique et aide au code Python."
+      />
     <div className="bg-[#121620] border border-[#212a3d] rounded-xl overflow-hidden shadow-2xl flex flex-col h-[560px]" id="ai-assistant-tab">
-      <div className="p-4 bg-[#171d2b] border-b border-[#212a3d] flex justify-between items-center shrink-0">
-        <div className="flex items-center gap-2">
-          <Brain className="h-5 w-5 text-amber-400" />
-          <div>
-            <h3 className="text-sm font-bold text-white uppercase font-sans tracking-wide">Assistant Gemmologue IA GemoPhy</h3>
-            <p className="text-[10px] text-gray-400">Expertise scientifique & assistance de code Python en direct</p>
-          </div>
-        </div>
-        <span className="bg-amber-400/15 text-amber-400 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border border-amber-400/10 flex items-center gap-1">
-          <Sparkles className="h-2.5 w-2.5 animate-pulse" /> Gemini 3.5 AI Enabled
-        </span>
-      </div>
-
       {/* Messages Feed */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-[#0e1117] scrollbar-thin select-text">
         {messages.map((msg, index) => (
@@ -175,6 +168,7 @@ export default function GemologyAiAssistant() {
           <Send className="h-4.5 w-4.5" />
         </button>
       </form>
+    </div>
     </div>
   );
 }

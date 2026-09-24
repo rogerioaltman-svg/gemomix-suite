@@ -4,6 +4,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Bijou, Gemstone } from '../types';
 import { Sparkles, Plus, Trash2, Hammer, X, Check, Diamond, AlertTriangle } from 'lucide-react';
 
@@ -122,29 +123,17 @@ export default function BijouManager({ bijoux, gemstones, onSaveBijou, onDeleteB
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <div className="bg-[#121620] border border-[#212a3d] rounded-2xl p-6 sm:p-8 shadow-xl">
-        <div className="flex items-center justify-between gap-3 mb-6 border-b border-[#212a3d] pb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-[#bda165]/10 text-[#bda165] rounded-xl">
-              <Sparkles className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold font-sans text-white">Bijoux composés</h2>
-              <p className="text-xs text-gray-400 mt-1 max-w-lg">
-                Montures composées d'une ou plusieurs pierres de l'inventaire. La décomposition
-                libère individuellement chaque pierre sertie, qui redevient disponible en stock.
-              </p>
-            </div>
-          </div>
-          <button
-            id="bijou-new-button"
-            onClick={handleOpenNew}
-            className="px-4 py-2.5 bg-[#bda165] hover:bg-[#cdb47a] text-black text-xs font-bold rounded-lg flex items-center gap-2 shrink-0 transition-colors"
-          >
-            <Plus className="h-4 w-4" /> Nouveau bijou
+      <PageHeader
+        title="Bijoux composés"
+        description="Montures composées d'une ou plusieurs pierres de l'inventaire. La décomposition libère individuellement chaque pierre sertie, qui redevient disponible en stock."
+        actions={
+          <button id="bijou-new-button" onClick={handleOpenNew} className={btnPrimary}>
+            <Plus className="h-4 w-4" />
+            <span>Nouveau bijou</span>
           </button>
-        </div>
-
+        }
+      />
+      <div className="bg-[#121620] border border-[#212a3d] rounded-2xl p-6 sm:p-8 shadow-xl">
         {bijoux.length === 0 ? (
           <div className="text-center py-12">
             <Sparkles className="h-10 w-10 text-gray-700 mx-auto mb-3" />

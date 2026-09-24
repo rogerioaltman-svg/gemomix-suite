@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Gemstone, Lot, Purchase } from '../types';
 import {
   Diamond,
@@ -233,20 +234,16 @@ export default function StockList({
 
   return (
     <div className="space-y-6" id="inventory-list-tab">
-      <div className="flex justify-between items-center flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-white font-sans">Inventaire</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Pierres uniques, lots de tri et colis bruts d'achat. Cliquez sur une pierre pour ouvrir sa fiche.</p>
-        </div>
-        <button
-          id="btn-new-gem"
-          onClick={onNewGem}
-          className="px-4 py-2 text-xs bg-[#bda165] hover:bg-[#cca96e] text-black font-semibold rounded-lg flex items-center gap-1.5 transition-all duration-200"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span>Enregistrer une pierre</span>
-        </button>
-      </div>
+      <PageHeader
+        title="Inventaire"
+        description="Pierres uniques, lots de tri et colis bruts d'achat. Cliquez sur une pierre pour ouvrir sa fiche."
+        actions={
+          <button id="btn-new-gem" onClick={onNewGem} className={btnPrimary}>
+            <Plus className="h-3.5 w-3.5" />
+            <span>Enregistrer une pierre</span>
+          </button>
+        }
+      />
 
       <div className="bg-[#121620] border border-[#212a3d] rounded-xl overflow-hidden shadow-2xl">
         

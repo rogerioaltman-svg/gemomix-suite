@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Supplier, Client } from '../types';
 import ClientFormModal from './ClientFormModal';
 import { 
@@ -352,52 +353,29 @@ export default function ContactManager({
   return (
     <div className="space-y-6">
       
-      {/* Title block */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-[#101421] border border-[#1f283d] rounded-2xl p-5 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2 text-[#e0b760] font-mono text-[10px] tracking-widest uppercase">
-            <Users className="h-4 w-4" />
-            <span>Gestion de la Relation Tiers & Récupération</span>
-          </div>
-          <h2 className="text-xl font-bold font-sans tracking-tight text-white mt-1">
-            Annuaire des Clients & Fournisseurs
-          </h2>
-          <p className="text-xs text-gray-400 mt-1 max-w-2xl">
-            Gérez vos clients joailliers d'un côté et votre réseau de négociants/mines partenaires de l'autre. Importez instantanément des fichiers .CSV pour récupérer facilement vos données existantes.
-          </p>
-        </div>
-        
-        <div className="flex gap-2 w-full md:w-auto shrink-0">
-          <button
-            onClick={() => setIsCsvModalOpen(true)}
-            id="btn-open-csv-import"
-            className="flex-1 md:flex-initial px-3.5 py-2 text-xs bg-[#171e2c] hover:bg-[#1f283d] text-white rounded-lg border border-[#27354d] hover:border-amber-400/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <UploadCloud className="h-4 w-4 text-[#e0b760]" />
-            <span>Importer CSV</span>
-          </button>
-          
-          {activeSubTab === 'clients' ? (
-            <button
-              onClick={handleOpenNewClient}
-              id="btn-new-client"
-              className="flex-1 md:flex-initial px-4 py-2 text-xs font-semibold bg-gradient-to-r from-[#8a733e] to-[#bda165] hover:opacity-90 text-black rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span>Nouveau Client</span>
+      <PageHeader
+        title="Clients & Fournisseurs"
+        description="Annuaire de vos clients et de vos négociants partenaires. Importez vos contacts depuis un fichier CSV."
+        actions={
+          <>
+            <button onClick={() => setIsCsvModalOpen(true)} id="btn-open-csv-import" className={btnSecondary}>
+              <UploadCloud className="h-4 w-4 text-[#e0b760]" />
+              <span>Importer CSV</span>
             </button>
-          ) : (
-            <button
-              onClick={handleOpenNewSupplier}
-              id="btn-new-supplier"
-              className="flex-1 md:flex-initial px-4 py-2 text-xs font-semibold bg-gradient-to-r from-[#8a733e] to-[#bda165] hover:opacity-90 text-black rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Building2 className="h-4 w-4" />
-              <span>Nouveau Fournisseur</span>
-            </button>
-          )}
-        </div>
-      </div>
+            {activeSubTab === 'clients' ? (
+              <button onClick={handleOpenNewClient} id="btn-new-client" className={btnPrimary}>
+                <UserPlus className="h-4 w-4" />
+                <span>Nouveau client</span>
+              </button>
+            ) : (
+              <button onClick={handleOpenNewSupplier} id="btn-new-supplier" className={btnPrimary}>
+                <Building2 className="h-4 w-4" />
+                <span>Nouveau fournisseur</span>
+              </button>
+            )}
+          </>
+        }
+      />
 
       {/* Segment switcher and search panel */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-[#101421]/60 border border-[#1d2739]/80 rounded-xl p-3">

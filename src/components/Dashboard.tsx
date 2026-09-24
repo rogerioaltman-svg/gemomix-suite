@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Gemstone, Lot, Purchase } from '../types';
 import { 
   Sparkles, 
@@ -125,6 +126,23 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6" id="dashboard-tab">
+      <PageHeader
+        title="Tableau de bord"
+        description="Stock consolidé : vos achats s'affichent en colis bruts, puis se mettent à jour à mesure de votre tri en lots."
+        actions={
+          <>
+            <button id="btn-quick-add" onClick={onNewGem} className={btnSecondary}>
+              <Plus className="h-3.5 w-3.5" />
+              <span>Enregistrer une pierre</span>
+            </button>
+            <button id="btn-nav-purchases" onClick={() => onNavigateToTab('purchases')} className={btnPrimary}>
+              <Plus className="h-3.5 w-3.5" />
+              <span>Saisir un achat</span>
+            </button>
+          </>
+        }
+      />
+
       
        {/* KPI Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -237,32 +255,6 @@ export default function Dashboard({
             </div>
           </div>
           <div className="absolute bottom-0 left-0 h-[2px] w-full bg-sky-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300" />
-        </div>
-      </div>
-
-      {/* Quick Actions / Integration Prompt Bar */}
-      <div className="flex justify-between items-center flex-wrap gap-3 bg-[#111520] border border-[#20293a] p-4 rounded-xl">
-        <div className="flex gap-2 items-center text-sm text-gray-300">
-          <span className="inline-block w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
-          <span><b>Stock Consolidé Actif</b> • Vos achats s’affichent en colis bruts, puis se mettent à jour au fur et à mesure de votre tri en lots.</span>
-        </div>
-        <div className="flex gap-2">
-          <button 
-            id="btn-nav-purchases"
-            onClick={() => onNavigateToTab('purchases')}
-            className="px-4 py-2 text-xs bg-[#12231c] hover:bg-[#183329] text-emerald-400 border border-emerald-500/30 font-semibold rounded-lg flex items-center gap-1.5 transition-all duration-200"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Saisir un Achat</span>
-          </button>
-          <button 
-            id="btn-quick-add"
-            onClick={onNewGem}
-            className="px-4 py-2 text-xs bg-[#bda165] hover:bg-[#cca96e] text-black font-semibold rounded-lg flex items-center gap-1.5 transition-all duration-200"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Enregistrer Pierre</span>
-          </button>
         </div>
       </div>
 
