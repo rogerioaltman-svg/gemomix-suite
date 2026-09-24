@@ -36,11 +36,12 @@ interface PurchaseManagerProps {
   purchases: Purchase[];
   lots: Lot[];
   gemstones?: Gemstone[];
-  onSavePurchase: (p: Purchase) => void;
+  onSavePurchase: (p: Purchase) => Promise<boolean> | void;
   onDeletePurchase: (id: string) => void;
-  onSaveLot: (l: Lot) => void;
+  onSaveLot: (l: Lot) => Promise<boolean> | void;
   onDeleteLot: (id: string) => void;
   suppliers?: Supplier[];
+  onOpenGem?: (gem: Gemstone) => void;
 }
 
 export default function PurchaseManager({
@@ -51,7 +52,8 @@ export default function PurchaseManager({
   onDeletePurchase,
   onSaveLot,
   onDeleteLot,
-  suppliers = []
+  suppliers = [],
+  onOpenGem
 }: PurchaseManagerProps) {
   // Tab within this component: 'purchases' or 'all-lots'
   const [managerTab, setManagerTab] = useState<'purchases' | 'all-lots'>('purchases');
@@ -178,6 +180,20 @@ export default function PurchaseManager({
   const [artCaratPrice, setArtCaratPrice] = useState('');
   const [artNotes, setArtNotes] = useState('');
   const [artDirectEntry, setArtDirectEntry] = useState(false);
+  // Détails facultatifs d'une pierre unique (servent à créer sa fiche à l'enregistrement)
+  const [showStoneDetails, setShowStoneDetails] = useState(false);
+  const [artStoneCut, setArtStoneCut] = useState('');
+  const [artStoneColor, setArtStoneColor] = useState('');
+  const [artStoneClarity, setArtStoneClarity] = useState('');
+  const [artStoneImage, setArtStoneImage] = useState('');
+  const resetStoneDraft = () => {
+    setArtDirectEntry(false);
+    setShowStoneDetails(false);
+    setArtStoneCut('');
+    setArtStoneColor('');
+    setArtStoneClarity('');
+    setArtStoneImage('');
+  };
 
   // Triage Workspace state: active PurchaseArticle under triaging
   const [activeTriageArticle, setActiveTriageArticle] = useState<{
@@ -236,7 +252,10 @@ export default function PurchaseManager({
         caratPrice: priceNum,
         totalPrice: Number((weightNum * priceNum).toFixed(2)),
         notes: artNotes,
-        entryMode: artDirectEntry ? 'stock' : 'tri'
+        entryMode: artDirectEntry ? 'stock' : 'tri',
+        ...(artDirectEntry && (artStoneCut.trim() || artStoneColor.trim() || artStoneClarity.trim() || artStoneImage)
+          ? { stoneDetails: { cut: artStoneCut.trim(), color: artStoneColor.trim(), clarity: artStoneClarity.trim(), image: artStoneImage || undefined } }
+          : {})
       }
     ]);
 
@@ -245,7 +264,7 @@ export default function PurchaseManager({
     setArtWeight('');
     setArtCaratPrice('');
     setArtNotes('');
-    setArtDirectEntry(false);
+    resetStoneDraft();
   };
 
   const handleRemoveTempArticle = (idx: number) => {
@@ -253,7 +272,7 @@ export default function PurchaseManager({
   };
 
   // Save full purchase
-  const handleSaveFullPurchase = (e: React.FormEvent) => {
+  const handleSaveFullPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!purchaseRef.trim()) errs.purchaseRef = "La référence est requise.";
@@ -285,11 +304,13 @@ export default function PurchaseManager({
       notes: pNotes.trim()
     };
 
-    onSavePurchase(newPurchase);
+    // En cas d'échec côté serveur, la saisie est conservée pour pouvoir réessayer
+    if ((await onSavePurchase(newPurchase)) === false) return;
 
     // Reset state
     setSupplierRef('');
     setNoSupplierInvoice(false);
+    resetStoneDraft();
     setPurchaseRef('');
     setSupplier('');
     setPNotes('');
@@ -300,7 +321,7 @@ export default function PurchaseManager({
   };
 
   // Save new lot de tri in triage workspace
-  const handleSaveLotInTriage = (e: React.FormEvent) => {
+  const handleSaveLotInTriage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTriageArticle) return;
 
@@ -346,7 +367,7 @@ export default function PurchaseManager({
     };
 
     const wasEditing = !!editingLotId;
-    onSaveLot(newLot);
+    if ((await onSaveLot(newLot)) === false) return;
 
     // Confirmation sur place + préparation de la saisie en chaîne
     if (!wasEditing) {
@@ -449,7 +470,9 @@ export default function PurchaseManager({
               setSupplier('');
               setSupplierRef('');
               setNoSupplierInvoice(false);
+              resetStoneDraft();
     setNoSupplierInvoice(false);
+    resetStoneDraft();
               setPNotes('');
               setTempArticles([]);
               try {
@@ -903,8 +926,11 @@ export default function PurchaseManager({
                 setSupplier('');
                 setSupplierRef('');
               setNoSupplierInvoice(false);
+              resetStoneDraft();
                 setNoSupplierInvoice(false);
+                resetStoneDraft();
     setNoSupplierInvoice(false);
+    resetStoneDraft();
                 setPNotes('');
                 setTempArticles([]);
                 setFormErrors({});
@@ -1112,6 +1138,69 @@ export default function PurchaseManager({
               />
             </div>
 
+            {/* Détails facultatifs de la pierre unique (repliés par défaut, comme pour les lots) */}
+            {artDirectEntry && (
+              <div className="space-y-3">
+                <button
+                  id="btn-toggle-stone-details"
+                  type="button"
+                  onClick={() => setShowStoneDetails(!showStoneDetails)}
+                  className="w-full flex items-center justify-between px-3 py-2 bg-[#161d2d] hover:bg-[#1b2333] border border-gray-800 rounded-lg text-[10px] font-mono uppercase text-gray-400 hover:text-gray-200 transition-colors"
+                >
+                  <span>{showStoneDetails ? '▾' : '▸'} Détails de la pierre, facultatif (taille, couleur, pureté, photo)</span>
+                  <span className="text-gray-600 normal-case">{showStoneDetails ? 'replier' : 'déplier'}</span>
+                </button>
+
+                {showStoneDetails && (
+                  <div className="space-y-3 animate-fadeIn">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <label className="block text-gray-400 font-mono text-[10px] uppercase">Type de taille</label>
+                        <input
+                          id="stone-cut-input"
+                          type="text"
+                          value={artStoneCut}
+                          onChange={(e) => setArtStoneCut(e.target.value)}
+                          placeholder="ex: Ovale, Coussin"
+                          className="w-full px-2.5 py-1.5 bg-[#171e2c] border border-[#27354d] text-gray-300 rounded"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-gray-400 font-mono text-[10px] uppercase">Couleur / Grade</label>
+                        <input
+                          id="stone-color-input"
+                          type="text"
+                          value={artStoneColor}
+                          onChange={(e) => setArtStoneColor(e.target.value)}
+                          placeholder="ex: Bleu royal"
+                          className="w-full px-2.5 py-1.5 bg-[#171e2c] border border-[#27354d] text-gray-300 rounded"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-gray-400 font-mono text-[10px] uppercase">Pureté / Clarté</label>
+                        <input
+                          id="stone-clarity-input"
+                          type="text"
+                          value={artStoneClarity}
+                          onChange={(e) => setArtStoneClarity(e.target.value)}
+                          placeholder="ex: VS1"
+                          className="w-full px-2.5 py-1.5 bg-[#171e2c] border border-[#27354d] text-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                    <div className="border-t border-gray-800 pt-3">
+                      <PhotoCapture
+                        value={artStoneImage}
+                        onChange={setArtStoneImage}
+                        onClear={() => setArtStoneImage('')}
+                        label="Prise de vue de la pierre"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Ligne d'action : nature de l'article + ajout au bordereau */}
             <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between text-xs pt-1">
               <label
@@ -1155,6 +1244,9 @@ export default function PurchaseManager({
                         <span className={`ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border ${art.entryMode === 'stock' ? 'bg-[#bda165]/10 text-[#e0b760] border-[#bda165]/30' : 'bg-sky-500/10 text-sky-400 border-sky-500/20'}`}>
                           {art.entryMode === 'stock' ? '💎 Stock direct' : '📦 À trier'}
                         </span>
+                        {art.stoneDetails?.image && (
+                          <span className="ml-1.5 text-[9px] font-mono px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">📷 photo</span>
+                        )}
                         <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-3">
                           <span>Catégorie : <b className="text-gray-300 font-sans">{art.gemstoneType}</b></span>
                           <span>•</span>
@@ -1200,8 +1292,11 @@ export default function PurchaseManager({
                 setSupplier('');
                 setSupplierRef('');
               setNoSupplierInvoice(false);
+              resetStoneDraft();
                 setNoSupplierInvoice(false);
+                resetStoneDraft();
     setNoSupplierInvoice(false);
+    resetStoneDraft();
                 setPNotes('');
                 setTempArticles([]);
                 setFormErrors({});
@@ -1344,7 +1439,19 @@ export default function PurchaseManager({
                                       {linkedGem ? (
                                         <div className="flex items-center justify-between bg-emerald-500/5 border border-emerald-500/20 rounded-lg px-3 py-2.5">
                                           <span className="text-[11px] font-mono text-emerald-400 font-bold">💎 En stock : {linkedGem.reference}</span>
-                                          <span className="text-[10px] font-mono text-gray-400">Statut : {linkedGem.status}</span>
+                                          <span className="flex items-center gap-3">
+                                            <span className="text-[10px] font-mono text-gray-400">Statut : {linkedGem.status}</span>
+                                            {onOpenGem && (
+                                              <button
+                                                type="button"
+                                                id={`btn-open-gem-${linkedGem.id}`}
+                                                onClick={() => onOpenGem(linkedGem)}
+                                                className="px-2.5 py-1 text-[10px] font-mono font-bold bg-[#bda165]/10 hover:bg-[#bda165] hover:text-black text-[#e0b760] border border-[#bda165]/30 rounded transition-colors"
+                                              >
+                                                Compléter la fiche →
+                                              </button>
+                                            )}
+                                          </span>
                                         </div>
                                       ) : (
                                         <p className="text-[10px] text-gray-500 italic py-2">

@@ -91,6 +91,32 @@ export default function App() {
     localStorage.setItem('gemophy_sidebar_collapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
+  // Erreur d'enregistrement remontée par le serveur (affichée en bandeau).
+  // Sans cela, un refus du serveur (ex : photo trop lourde) passait inaperçu et
+  // l'écran présentait comme enregistré ce qui ne l'était pas.
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  const callApi = async (url: string, method: 'POST' | 'DELETE', body?: unknown): Promise<boolean> => {
+    try {
+      const res = await fetch(url, {
+        method,
+        ...(body !== undefined ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
+      });
+      if (res.ok) {
+        setApiError(null);
+        return true;
+      }
+      let detail = '';
+      try { detail = (await res.json())?.error || ''; } catch { /* corps non JSON */ }
+      if (res.status === 413) detail = 'Le fichier ou la photo est trop volumineux.';
+      setApiError(`Enregistrement refusé par le serveur${detail ? ` : ${detail}` : ` (erreur ${res.status})`}`);
+      return false;
+    } catch {
+      setApiError("Le serveur est injoignable : les modifications n'ont pas été enregistrées.");
+      return false;
+    }
+  };
+
   // Custom confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
     title: string;
@@ -150,76 +176,37 @@ export default function App() {
   };
 
   const handleRestoreTrashItem = async (type: TrashEntityType, id: string) => {
-    try {
-      await fetch(`/api/trash/${type}/${id}/restore`, { method: 'POST' });
-    } catch (e) {
-      console.error("Failed to restore trash item:", e);
-    }
+    await callApi(`/api/trash/${type}/${id}/restore`, 'POST');
     await loadAllData();
   };
 
   // --- Company Settings CRUD handlers ---
   const handleSaveCompanySettings = async (settings: CompanySettings) => {
-    try {
-      const res = await fetch('/api/company-settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      });
-      if (res.ok) {
-        setCompanySettings(settings);
-      }
-    } catch {
+    if (await callApi('/api/company-settings', 'POST', settings)) {
       setCompanySettings(settings);
     }
   };
 
   // --- Price Guide (barème) CRUD handlers ---
   const handleSavePriceGuideEntry = async (entry: PriceGuideEntry) => {
-    try {
-      const res = await fetch('/api/price-guide', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(entry)
-      });
-      if (res.ok) {
-        const list = await fetch('/api/price-guide').then(r => r.json());
-        setPriceGuide(list);
-      }
-    } catch {
-      const exists = priceGuide.some(e => e.id === entry.id);
-      const updated = exists
-        ? priceGuide.map(e => e.id === entry.id ? entry : e)
-        : [...priceGuide, entry];
-      setPriceGuide(updated);
+    if (await callApi('/api/price-guide', 'POST', entry)) {
+      const list = await fetch('/api/price-guide').then(r => r.json());
+      setPriceGuide(list);
     }
   };
 
   const handleDeletePriceGuideEntry = async (id: string) => {
-    try {
-      await fetch(`/api/price-guide/${id}`, { method: 'DELETE' });
+    if (await callApi(`/api/price-guide/${id}`, 'DELETE')) {
       const list = await fetch('/api/price-guide').then(r => r.json());
       setPriceGuide(list);
-    } catch {
-      setPriceGuide(priceGuide.filter(e => e.id !== id));
     }
   };
 
   // --- Module 12 : Bijoux composés CRUD handlers ---
   const handleSaveBijou = async (bijou: Bijou) => {
-    try {
-      const res = await fetch('/api/bijoux', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bijou)
-      });
-      if (res.ok) {
-        const list = await fetch('/api/bijoux').then(r => r.json());
-        setBijoux(list);
-      }
-    } catch {
-      const exists = bijoux.some(b => b.id === bijou.id);
-      setBijoux(exists ? bijoux.map(b => b.id === bijou.id ? bijou : b) : [bijou, ...bijoux]);
+    if (await callApi('/api/bijoux', 'POST', bijou)) {
+      const list = await fetch('/api/bijoux').then(r => r.json());
+      setBijoux(list);
     }
   };
 
@@ -228,12 +215,9 @@ export default function App() {
       title: "Supprimer le bijou",
       message: "Ce bijou sera retiré. Vous pourrez le restaurer depuis la Corbeille à tout moment.",
       onConfirm: async () => {
-        try {
-          await fetch(`/api/bijoux/${id}`, { method: 'DELETE' });
+        if (await callApi(`/api/bijoux/${id}`, 'DELETE')) {
           const list = await fetch('/api/bijoux').then(r => r.json());
           setBijoux(list);
-        } catch {
-          setBijoux(bijoux.filter(b => b.id !== id));
         }
         setConfirmDialog(null);
       }
@@ -243,32 +227,15 @@ export default function App() {
   // Décomposition : action distincte de la suppression, libère les pierres
   // serties (repassent 'Disponible') — recharge bijoux ET pierres.
   const handleDecomposeBijou = async (id: string) => {
-    try {
-      await fetch(`/api/bijoux/${id}/decompose`, { method: 'POST' });
-    } catch (e) {
-      console.error("Failed to decompose bijou:", e);
-    }
+    await callApi(`/api/bijoux/${id}/decompose`, 'POST');
     await loadAllData();
   };
 
   // --- Supplier CRUD handlers ---
   const handleSaveSupplier = async (savedSup: Supplier) => {
-    try {
-      const res = await fetch('/api/suppliers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(savedSup)
-      });
-      if (res.ok) {
-        const list = await fetch('/api/suppliers').then(r => r.json());
-        setSuppliers(list);
-      }
-    } catch {
-      const exists = suppliers.some(s => s.id === savedSup.id);
-      const updated = exists 
-        ? suppliers.map(s => s.id === savedSup.id ? savedSup : s)
-        : [...suppliers, savedSup];
-      setSuppliers(updated);
+    if (await callApi('/api/suppliers', 'POST', savedSup)) {
+      const list = await fetch('/api/suppliers').then(r => r.json());
+      setSuppliers(list);
     }
   };
 
@@ -277,13 +244,9 @@ export default function App() {
       title: "Purger ce fournisseur",
       message: "Ce fournisseur sera retiré de l'annuaire. Vous pourrez le restaurer depuis la Corbeille à tout moment.",
       onConfirm: async () => {
-        try {
-          await fetch(`/api/suppliers/${id}`, { method: 'DELETE' });
+        if (await callApi(`/api/suppliers/${id}`, 'DELETE')) {
           const list = await fetch('/api/suppliers').then(r => r.json());
           setSuppliers(list);
-        } catch {
-          const updated = suppliers.filter(s => s.id !== id);
-          setSuppliers(updated);
         }
         setConfirmDialog(null);
       }
@@ -292,22 +255,9 @@ export default function App() {
 
   // --- Client CRUD handlers ---
   const handleSaveClient = async (savedCli: Client) => {
-    try {
-      const res = await fetch('/api/clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(savedCli)
-      });
-      if (res.ok) {
-        const list = await fetch('/api/clients').then(r => r.json());
-        setClients(list);
-      }
-    } catch {
-      const exists = clients.some(c => c.id === savedCli.id);
-      const updated = exists 
-        ? clients.map(c => c.id === savedCli.id ? savedCli : c)
-        : [...clients, savedCli];
-      setClients(updated);
+    if (await callApi('/api/clients', 'POST', savedCli)) {
+      const list = await fetch('/api/clients').then(r => r.json());
+      setClients(list);
     }
   };
 
@@ -316,13 +266,9 @@ export default function App() {
       title: "Purger ce client",
       message: "Ce client sera retiré de l'annuaire. Vous pourrez le restaurer depuis la Corbeille à tout moment.",
       onConfirm: async () => {
-        try {
-          await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+        if (await callApi(`/api/clients/${id}`, 'DELETE')) {
           const list = await fetch('/api/clients').then(r => r.json());
           setClients(list);
-        } catch {
-          const updated = clients.filter(c => c.id !== id);
-          setClients(updated);
         }
         setConfirmDialog(null);
       }
@@ -331,37 +277,13 @@ export default function App() {
 
   // --- Sales Invoice CRUD handlers ---
   const handleSaveInvoice = async (savedInv: SalesInvoice) => {
-    try {
-      const res = await fetch('/api/sales-invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(savedInv)
-      });
-      if (res.ok) {
-        const [invList, gemList] = await Promise.all([
-          fetch('/api/sales-invoices').then(r => r.json()),
-          fetch('/api/gemstones').then(r => r.json())
-        ]);
-        setInvoices(invList);
-        setGemstones(Array.isArray(gemList) ? gemList.map(normalizeGemstone) : []);
-      }
-    } catch {
-      const exists = invoices.some(i => i.id === savedInv.id);
-      const updated = exists 
-        ? invoices.map(i => i.id === savedInv.id ? savedInv : i)
-        : [...invoices, savedInv];
-      setInvoices(updated);
-
-      if (savedInv.status === 'Payée' || savedInv.status === 'En attente') {
-        const updatedGems = gemstones.map(g => {
-          const foundInItems = savedInv.items.some(item => item.gemstoneId === g.id);
-          if (foundInItems) {
-            return { ...g, status: 'Vendu' as const };
-          }
-          return g;
-        });
-        setGemstones(updatedGems);
-      }
+    if (await callApi('/api/sales-invoices', 'POST', savedInv)) {
+      const [invList, gemList] = await Promise.all([
+        fetch('/api/sales-invoices').then(r => r.json()),
+        fetch('/api/gemstones').then(r => r.json())
+      ]);
+      setInvoices(invList);
+      setGemstones(Array.isArray(gemList) ? gemList.map(normalizeGemstone) : []);
     }
   };
 
@@ -370,13 +292,9 @@ export default function App() {
       title: "Purger cette facture",
       message: "Cette facture sera retirée du registre. Vous pourrez la restaurer depuis la Corbeille à tout moment.",
       onConfirm: async () => {
-        try {
-          await fetch(`/api/sales-invoices/${id}`, { method: 'DELETE' });
+        if (await callApi(`/api/sales-invoices/${id}`, 'DELETE')) {
           const list = await fetch('/api/sales-invoices').then(r => r.json());
           setInvoices(list);
-        } catch {
-          const updated = invoices.filter(i => i.id !== id);
-          setInvoices(updated);
         }
         setConfirmDialog(null);
       }
@@ -392,25 +310,15 @@ export default function App() {
     }
   };
 
-  // Add / Edit stone handler
+  // Add / Edit stone handler : on ne quitte la fiche que si le serveur a bien enregistré
   const handleSaveGemstone = async (savedGem: Gemstone) => {
     const normalized = normalizeGemstone(savedGem);
+    if (!(await callApi('/api/gemstones', 'POST', normalized))) return;
+
     const exists = gemstones.some(g => g.id === normalized.id);
-    const updatedList = exists 
+    setGemstones(exists
       ? gemstones.map(g => g.id === normalized.id ? normalized : g)
-      : [normalized, ...gemstones];
-    
-    try {
-      await fetch('/api/gemstones', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normalized)
-      });
-    } catch (e) {
-      console.error("Failed to persist remote gemstone:", e);
-    }
-    
-    setGemstones(updatedList);
+      : [normalized, ...gemstones]);
     setSelectedGem(null);
     setInventoryMode('list');
     setSelectedTab('inventory');
@@ -419,19 +327,9 @@ export default function App() {
   // Inline update for specific nested operations (e.g. recuttings)
   const handleUpdateGemstoneInline = async (updatedGem: Gemstone) => {
     const normalized = normalizeGemstone(updatedGem);
-    const updatedList = gemstones.map(g => g.id === normalized.id ? normalized : g);
-    
-    try {
-      await fetch('/api/gemstones', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normalized)
-      });
-    } catch (e) {
-      console.error("Failed to persist inline gemstone update:", e);
-    }
-    
-    setGemstones(updatedList);
+    if (!(await callApi('/api/gemstones', 'POST', normalized))) return;
+
+    setGemstones(gemstones.map(g => g.id === normalized.id ? normalized : g));
     setSelectedGem(normalized);
   };
 
@@ -443,50 +341,32 @@ export default function App() {
       title: "Supprimer la pierre précieuse",
       message: `La pierre ${gem.reference} sera retirée de l'inventaire. Vous pourrez la restaurer depuis la Corbeille à tout moment.`,
       onConfirm: async () => {
-        const updatedList = gemstones.filter(g => g.id !== id);
-        try {
-          await fetch(`/api/gemstones/${id}`, { method: 'DELETE' });
-        } catch (e) {
-          console.error("Failed to delete remote gemstone:", e);
-        }
-        setGemstones(updatedList);
-        if (selectedGem?.id === id) {
-          setSelectedGem(null);
-          setInventoryMode('list');
-          setSelectedTab('inventory');
+        if (await callApi(`/api/gemstones/${id}`, 'DELETE')) {
+          setGemstones(gemstones.filter(g => g.id !== id));
+          if (selectedGem?.id === id) {
+            setSelectedGem(null);
+            setInventoryMode('list');
+            setSelectedTab('inventory');
+          }
         }
         setConfirmDialog(null);
       }
     });
   };
 
-  // Purchases management handlers
-  const handleSavePurchase = async (savedPur: Purchase) => {
-    try {
-      const res = await fetch('/api/purchases', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(savedPur)
-      });
-      if (res.ok) {
-        // Recharge achats ET pierres : les articles "entrée directe en stock"
-        // créent des fiches pierres côté serveur
-        const [pList, gList] = await Promise.all([
-          fetch('/api/purchases').then(r => r.json()),
-          fetch('/api/gemstones').then(r => r.json())
-        ]);
-        setPurchases(pList);
-        setGemstones(Array.isArray(gList) ? gList.map(normalizeGemstone) : []);
-        return;
-      }
-    } catch (e) {
-      console.error("Failed to save remote purchase:", e);
-    }
-    // Fallback local si le backend est injoignable
-    const exists = purchases.some(p => p.id === savedPur.id);
-    setPurchases(exists
-      ? purchases.map(p => p.id === savedPur.id ? savedPur : p)
-      : [savedPur, ...purchases]);
+  // Purchases management handlers : retournent true si le serveur a enregistré,
+  // pour que le formulaire ne vide pas la saisie en cas d'échec
+  const handleSavePurchase = async (savedPur: Purchase): Promise<boolean> => {
+    if (!(await callApi('/api/purchases', 'POST', savedPur))) return false;
+    // Recharge achats ET pierres : les articles "entrée directe en stock"
+    // créent des fiches pierres côté serveur
+    const [pList, gList] = await Promise.all([
+      fetch('/api/purchases').then(r => r.json()),
+      fetch('/api/gemstones').then(r => r.json())
+    ]);
+    setPurchases(pList);
+    setGemstones(Array.isArray(gList) ? gList.map(normalizeGemstone) : []);
+    return true;
   };
 
   const handleDeletePurchase = (id: string) => {
@@ -496,37 +376,23 @@ export default function App() {
       title: "Supprimer l'achat",
       message: `L'achat "${purchase.reference}" de ${purchase.supplier} et ses lots de tri associés seront retirés. Vous pourrez tout restaurer depuis la Corbeille.`,
       onConfirm: async () => {
-        const updatedList = purchases.filter(p => p.id !== id);
-        const filteredLots = lots.filter(l => l.purchaseId !== id);
-        try {
-          await fetch(`/api/purchases/${id}`, { method: 'DELETE' });
-        } catch (e) {
-          console.error("Failed to delete remote purchase:", e);
+        if (await callApi(`/api/purchases/${id}`, 'DELETE')) {
+          setPurchases(purchases.filter(p => p.id !== id));
+          setLots(lots.filter(l => l.purchaseId !== id));
         }
-        setPurchases(updatedList);
-        setLots(filteredLots);
         setConfirmDialog(null);
       }
     });
   };
 
   // Lots de tri handlers
-  const handleSaveLot = async (savedLot: Lot) => {
+  const handleSaveLot = async (savedLot: Lot): Promise<boolean> => {
+    if (!(await callApi('/api/lots', 'POST', savedLot))) return false;
     const exists = lots.some(l => l.id === savedLot.id);
-    const updatedList = exists
+    setLots(exists
       ? lots.map(l => l.id === savedLot.id ? savedLot : l)
-      : [savedLot, ...lots];
-
-    try {
-      await fetch('/api/lots', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(savedLot)
-      });
-    } catch (e) {
-      console.error("Failed to save remote lot:", e);
-    }
-    setLots(updatedList);
+      : [savedLot, ...lots]);
+    return true;
   };
 
   const handleDeleteLot = (id: string) => {
@@ -536,13 +402,9 @@ export default function App() {
       title: "Supprimer le lot de tri",
       message: `Le lot de tri "${lot.reference}" sera retiré. Vous pourrez le restaurer depuis la Corbeille à tout moment.`,
       onConfirm: async () => {
-        const updatedList = lots.filter(l => l.id !== id);
-        try {
-          await fetch(`/api/lots/${id}`, { method: 'DELETE' });
-        } catch (e) {
-          console.error("Failed to delete remote lot:", e);
+        if (await callApi(`/api/lots/${id}`, 'DELETE')) {
+          setLots(lots.filter(l => l.id !== id));
         }
-        setLots(updatedList);
         setConfirmDialog(null);
       }
     });
@@ -754,6 +616,7 @@ export default function App() {
             onSaveLot={handleSaveLot}
             onDeleteLot={handleDeleteLot}
             suppliers={suppliers}
+            onOpenGem={(gem) => openGemForm(gem)}
           />
         )}
 
@@ -822,6 +685,24 @@ export default function App() {
         )}
       </main>
       </div>
+
+      {apiError && (
+        <div
+          id="api-error-banner"
+          role="alert"
+          className="fixed top-3 left-1/2 -translate-x-1/2 z-[110] max-w-xl w-[calc(100%-2rem)] flex items-start gap-3 bg-red-600 text-white text-xs font-semibold rounded-xl shadow-2xl px-4 py-3"
+        >
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          <span className="flex-1 leading-relaxed">{apiError}</span>
+          <button
+            id="api-error-dismiss"
+            onClick={() => setApiError(null)}
+            className="shrink-0 px-2 py-0.5 rounded bg-white/20 hover:bg-white/30 font-bold"
+          >
+            Fermer
+          </button>
+        </div>
+      )}
 
       {confirmDialog && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
