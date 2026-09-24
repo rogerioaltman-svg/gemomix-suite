@@ -311,7 +311,7 @@ export default function SalesManager({
             Facturation de Vente
           </h2>
           <p className="text-xs text-gray-400 mt-1 max-w-2xl">
-            Émettez des factures conformes à la réglementation, déduisez automatiquement les pierres vendues du stock d'inventaire, et imprimez de magnifiques bons de livraison ou fiches de douanes.
+            Émettez vos factures de vente et déduisez automatiquement les pierres vendues du stock d'inventaire.
           </p>
         </div>
 

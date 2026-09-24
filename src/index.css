@@ -285,12 +285,10 @@ body:has(.light-theme) {
   color: #ffffff !important;
 }
 
-/* Ensure hovered navigation elements turn white on hover in light mode */
-.light-theme nav button:hover,
-.light-theme nav button:hover *,
-.light-theme .hover\:bg-\[\#161d2d\]:hover,
+/* Survol des entrées de navigation en thème clair : fond gris clair (voir
+   .hover\:bg-\[\#161d2d\]:hover plus bas), donc texte sombre et non blanc */
 .light-theme .hover\:bg-\[\#161d2d\]:hover * {
-  color: #ffffff !important;
+  color: inherit;
 }
 
 /* Specific styling for Theme Toggle buttons in Light Mode to ensure perfect readability and hover effects */
@@ -501,7 +499,7 @@ body:has(.light-theme) {
 
 /* Autres hover hex foncés sur lignes de tableau */
 .light-theme .hover\:bg-\[\#161d2d\]:hover {
-  background-color: #e2e8f0 !important;
+  background-color: #cbd5e1 !important;
   color: #0f172a !important;
 }
 .light-theme .hover\:bg-\[\#1f283d\]:hover,
