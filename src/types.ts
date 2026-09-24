@@ -59,7 +59,8 @@ export interface Gemstone {
   dateAdded: string; // Date d'entrée
   description: string;
   inclusions: string[];
-  image?: string; // photo data-url or path
+  image?: string; // photo data-url : absente des listes, chargée à la demande
+  hasImage?: boolean; // une photo existe (les listes ne transportent pas l'image elle-même)
   recuttings?: RecuttingRecord[]; // list of recutting procedures / history
   sourcePurchaseId?: string; // traçabilité : achat d'origine (entrée directe en stock)
   sourceArticleId?: string; // traçabilité : ligne d'article d'origine
@@ -142,7 +143,8 @@ export interface Lot {
   destination: string; // e.g. "Lot de tri #1"
   dateCreated: string;
   notes?: string;
-  image?: string; // photo data-url or path
+  image?: string; // photo data-url : absente des listes, chargée à la demande
+  hasImage?: boolean; // une photo existe (les listes ne transportent pas l'image elle-même)
 }
 
 export interface Supplier {

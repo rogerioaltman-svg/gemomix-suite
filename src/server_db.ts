@@ -387,6 +387,23 @@ function importData(conn: Database.Database, data: ImportPayload) {
    Mappers ligne SQL <-> objet métier
    ========================================================================== */
 
+// Les photos (data-URL, parfois plusieurs Mo) ne sont jamais renvoyées dans les
+// listes : on sélectionne toutes les colonnes sauf image et on expose seulement
+// un indicateur has_image. La photo se charge à la demande (getGemstoneImage / getLotImage).
+const lightColumnsCache = new Map<string, string>();
+function lightSelect(conn: Database.Database, table: string): string {
+  let cols = lightColumnsCache.get(table);
+  if (!cols) {
+    cols = (conn.pragma(`table_info(${table})`) as any[])
+      .map(c => c.name as string)
+      .filter(n => n !== 'image')
+      .map(n => `${table}.${n}`)
+      .join(', ');
+    lightColumnsCache.set(table, cols);
+  }
+  return `SELECT ${cols}, (${table}.image IS NOT NULL AND ${table}.image != '') AS has_image FROM ${table}`;
+}
+
 function rowToGemstone(r: any): Gemstone {
   return {
     id: r.id,
@@ -410,6 +427,7 @@ function rowToGemstone(r: any): Gemstone {
     description: r.description ?? '',
     inclusions: JSON.parse(r.inclusions || '[]'),
     image: r.image ?? undefined,
+    hasImage: r.has_image !== undefined ? !!r.has_image : !!r.image,
     recuttings: r.recuttings ? JSON.parse(r.recuttings) : undefined,
     sourcePurchaseId: r.source_purchase_id ?? undefined,
     sourceArticleId: r.source_article_id ?? undefined,
@@ -431,7 +449,7 @@ function upsertGemstone(conn: Database.Database, g: Gemstone) {
       @dimLength, @dimWidth, @dimDepth, @refractiveIndex, @specificGravity,
       @treatment, @origin, @certAuthority, @certNumber,
       @costPrice, @sellingPrice, @status, @dealer, @dateAdded, @description,
-      @inclusions, @image, @recuttings, @sourcePurchaseId, @sourceArticleId, @provenance, @location
+      @inclusions, CASE WHEN @keepImage = 1 THEN (SELECT image FROM gemstones WHERE id = @id) ELSE @image END, @recuttings, @sourcePurchaseId, @sourceArticleId, @provenance, @location
     )
   `).run({
     id: g.id,
@@ -457,7 +475,8 @@ function upsertGemstone(conn: Database.Database, g: Gemstone) {
     dateAdded: g.dateAdded ?? new Date().toISOString(),
     description: g.description ?? '',
     inclusions: JSON.stringify(g.inclusions ?? []),
-    image: g.image ?? null,
+    keepImage: g.image === undefined ? 1 : 0,
+    image: g.image ? g.image : null,
     recuttings: g.recuttings ? JSON.stringify(g.recuttings) : null,
     sourcePurchaseId: g.sourcePurchaseId ?? null,
     sourceArticleId: g.sourceArticleId ?? null,
@@ -527,7 +546,8 @@ function rowToLot(r: any): Lot {
     destination: r.destination ?? '',
     dateCreated: r.date_created,
     notes: r.notes ?? undefined,
-    image: r.image ?? undefined
+    image: r.image ?? undefined,
+    hasImage: r.has_image !== undefined ? !!r.has_image : !!r.image
   };
 }
 
@@ -540,7 +560,7 @@ function upsertLot(conn: Database.Database, l: Lot) {
     ) VALUES (
       @id, @reference, @purchaseId, @purchaseArticleId, @gemstoneType, @weight,
       @quantity, @averageSize, @averageColor, @averageClarity, @cutType,
-      @destination, @dateCreated, @notes, @image
+      @destination, @dateCreated, @notes, CASE WHEN @keepImage = 1 THEN (SELECT image FROM lots WHERE id = @id) ELSE @image END
     )
   `).run({
     id: l.id,
@@ -557,7 +577,8 @@ function upsertLot(conn: Database.Database, l: Lot) {
     destination: l.destination ?? '',
     dateCreated: l.dateCreated ?? new Date().toISOString(),
     notes: l.notes ?? null,
-    image: l.image ?? null
+    keepImage: l.image === undefined ? 1 : 0,
+    image: l.image ? l.image : null
   });
 }
 
@@ -773,9 +794,19 @@ export async function getDb(): Promise<{ status: string }> {
   return { status: 'loaded' };
 }
 
+export async function getGemstoneImage(id: string): Promise<string | null> {
+  const r = getConnection().prepare('SELECT image FROM gemstones WHERE id = ?').get(id) as { image: string | null } | undefined;
+  return r?.image ?? null;
+}
+
+export async function getLotImage(id: string): Promise<string | null> {
+  const r = getConnection().prepare('SELECT image FROM lots WHERE id = ?').get(id) as { image: string | null } | undefined;
+  return r?.image ?? null;
+}
+
 export async function getAllGemstones(): Promise<Gemstone[]> {
   return getConnection()
-    .prepare('SELECT * FROM gemstones WHERE deleted_at IS NULL ORDER BY date_added DESC')
+    .prepare(`${lightSelect(getConnection(), 'gemstones')} WHERE gemstones.deleted_at IS NULL ORDER BY gemstones.date_added DESC`)
     .all()
     .map(rowToGemstone);
 }
@@ -996,7 +1027,7 @@ export async function restorePurchase(id: string): Promise<void> {
 
 export async function getAllLots(): Promise<Lot[]> {
   return getConnection()
-    .prepare('SELECT * FROM lots WHERE deleted_at IS NULL ORDER BY date_created DESC')
+    .prepare(`${lightSelect(getConnection(), 'lots')} WHERE lots.deleted_at IS NULL ORDER BY lots.date_created DESC`)
     .all()
     .map(rowToLot);
 }

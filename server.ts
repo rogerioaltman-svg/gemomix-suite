@@ -11,7 +11,7 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import {
   getDb, DB_FILE_PATH,
-  getAllGemstones, saveGemstone, deleteGemstone,
+  getAllGemstones, saveGemstone, deleteGemstone, getGemstoneImage, getLotImage,
   getAllPurchases, savePurchase, deletePurchase, deleteLotsByPurchaseId, getNextPurchaseReference, getNextSubReference,
   getAllLots, saveLot, deleteLot,
   getAllSuppliers, saveSupplier, deleteSupplier,
@@ -66,6 +66,26 @@ app.get('/api/gemstones', async (req, res) => {
   } catch (error: any) {
     console.error("Error fetching gemstones:", error);
     res.status(500).json({ error: "Erreur lors de la récupération des pierres précieuses." });
+  }
+});
+
+// Photo d'une pierre, chargée à la demande (les listes ne la transportent pas)
+app.get('/api/gemstones/:id/image', async (req, res) => {
+  try {
+    res.json({ image: await getGemstoneImage(req.params.id) });
+  } catch (error: any) {
+    console.error("Error fetching gemstone image:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération de la photo." });
+  }
+});
+
+// Photo d'un lot, chargée à la demande
+app.get('/api/lots/:id/image', async (req, res) => {
+  try {
+    res.json({ image: await getLotImage(req.params.id) });
+  } catch (error: any) {
+    console.error("Error fetching lot image:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération de la photo." });
   }
 });
 
