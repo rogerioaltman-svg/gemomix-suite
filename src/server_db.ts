@@ -920,20 +920,19 @@ export async function saveGemstone(gem: Gemstone): Promise<void> {
 
 // Champs corrigeables sur une pierre vendue : chaque correction exige un motif et laisse une trace
 // (mouvement AJUSTEMENT : ancienne valeur, nouvelle valeur, motif).
-export const CORRECTABLE_GEM_FIELDS: Record<string, { label: string; kind: 'text' | 'number' }> = {
-  type: { label: 'Variété', kind: 'text' },
-  weight: { label: 'Poids (ct)', kind: 'number' },
-  cut: { label: 'Taille', kind: 'text' },
-  color: { label: 'Couleur', kind: 'text' },
-  clarity: { label: 'Pureté', kind: 'text' },
-  origin: { label: 'Origine', kind: 'text' },
-  treatment: { label: 'Traitement', kind: 'text' },
-  dealer: { label: 'Fournisseur', kind: 'text' },
-  costPrice: { label: "Prix d'achat", kind: 'number' },
-  sellingPrice: { label: 'Prix de vente', kind: 'number' },
-  certAuthority: { label: 'Certificat : organisme', kind: 'text' },
-  certNumber: { label: 'Certificat : numéro', kind: 'text' }
+// Règle : une donnée qui provient d'un document ne se corrige pas sur la pierre, mais sur le document.
+//  - description de la marchandise vendue (variété, poids, taille, couleur, pureté, origine, traitement,
+//    certificat) : elle figure sur la facture de vente -> avoir, puis nouvelle facture ;
+//  - fournisseur et prix d'achat d'une pierre issue d'un achat : à corriger dans l'achat (la fiche suit) ;
+//  - prix de vente estimé, et fournisseur / prix d'achat d'une pierre sans achat (stock initial) : sans
+//    document source dans l'application, corrigeables ici avec motif.
+export const CORRECTABLE_GEM_FIELDS: Record<string, { label: string; kind: 'text' | 'number'; fromPurchase?: boolean }> = {
+  sellingPrice: { label: 'Prix de vente (estimation)', kind: 'number' },
+  costPrice: { label: "Prix d'achat", kind: 'number', fromPurchase: true },
+  dealer: { label: 'Fournisseur', kind: 'text', fromPurchase: true }
 };
+
+const SOLD_DESCRIPTION_FIELDS = ['type', 'weight', 'cut', 'color', 'clarity', 'origin', 'treatment', 'certAuthority', 'certNumber'];
 
 export async function correctSoldGemstone(id: string, field: string, rawValue: unknown, reason: unknown): Promise<void> {
   const conn = getConnection();
@@ -944,7 +943,15 @@ export async function correctSoldGemstone(id: string, field: string, rawValue: u
       throw new InvoiceLockedError("Cette correction ne concerne que les pierres vendues : modifiez directement la fiche.");
     }
     const def = CORRECTABLE_GEM_FIELDS[field];
-    if (!def) throw new InvoiceLockedError("Ce champ ne peut pas être corrigé.");
+    if (!def) {
+      throw new InvoiceLockedError(SOLD_DESCRIPTION_FIELDS.includes(field)
+        ? "Cette donnée décrit la marchandise vendue et figure sur la facture : corrigez-la par un avoir sur la facture de vente, puis refacturez."
+        : "Ce champ ne peut pas être corrigé.");
+    }
+    if (def.fromPurchase && (row as any).source_purchase_id) {
+      const src = conn.prepare('SELECT reference FROM purchases WHERE id = ?').get((row as any).source_purchase_id) as { reference: string } | undefined;
+      throw new InvoiceLockedError(`Cette donnée provient de l'achat ${src?.reference ?? ''} : modifiez-la dans « Achats & Lots », la fiche de la pierre suivra.`);
+    }
     const why = String(reason ?? '').trim();
     if (why.length < 3) throw new InvoiceLockedError('Le motif de la correction est obligatoire.');
 
@@ -1009,10 +1016,38 @@ export async function savePurchase(p: Purchase): Promise<void> {
       ...finalPurchase,
       articles: (finalPurchase.articles ?? []).map(({ stoneDetails, ...rest }) => rest)
     };
+    const previousRow = conn.prepare('SELECT * FROM purchases WHERE id = ?').get(p.id);
+    const previous: Purchase | undefined = previousRow ? rowToPurchase(previousRow) : undefined;
     upsertPurchase(conn, storedPurchase);
     createDirectEntryGemstones(conn, finalPurchase);
+    if (previous) propagatePurchaseChanges(conn, previous, finalPurchase);
   });
   run();
+}
+
+// L'achat est le document d'origine : quand son fournisseur ou le prix d'un article change, la fiche
+// de la pierre issue de cet article (entrée directe) suit, avec une trace dans son historique.
+// Seuls les changements réels sont propagés : une valeur corrigée à la main n'est jamais écrasée
+// par un simple réenregistrement de l'achat.
+function propagatePurchaseChanges(conn: Database.Database, previous: Purchase, current: Purchase) {
+  const findGem = conn.prepare('SELECT id, reference FROM gemstones WHERE source_article_id = ?');
+  const supplierChanged = (previous.supplier ?? '') !== (current.supplier ?? '');
+  for (const art of current.articles ?? []) {
+    if (art.entryMode !== 'stock') continue;
+    const gem = findGem.get(art.id) as { id: string; reference: string } | undefined;
+    if (!gem) continue;
+    if (supplierChanged) {
+      conn.prepare('UPDATE gemstones SET dealer = ? WHERE id = ?').run(current.supplier ?? '', gem.id);
+      logMovement(conn, 'AJUSTEMENT', 'gemstone', gem.id, gem.reference, undefined, undefined,
+        `Achat ${current.reference} modifié — fournisseur : ${previous.supplier || '(vide)'} → ${current.supplier || '(vide)'}`);
+    }
+    const before = (previous.articles ?? []).find(a => a.id === art.id);
+    if (before && (before.totalPrice ?? 0) !== (art.totalPrice ?? 0)) {
+      conn.prepare('UPDATE gemstones SET cost_price = ? WHERE id = ?').run(art.totalPrice ?? 0, gem.id);
+      logMovement(conn, 'AJUSTEMENT', 'gemstone', gem.id, gem.reference, undefined, art.totalPrice ?? 0,
+        `Achat ${current.reference} modifié — prix d'achat : ${before.totalPrice ?? 0} → ${art.totalPrice ?? 0}`);
+    }
+  }
 }
 
 // Génère le prochain numéro de facture d'achat séquentiel (ex: "512", "513"...).

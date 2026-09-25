@@ -110,20 +110,13 @@ interface InventoryManagerProps {
   onGenerateCertificate?: (reference: string) => void;
 }
 
-// Champs corrigeables sur une pierre vendue (miroir de CORRECTABLE_GEM_FIELDS côté serveur)
-const CORRECTABLE_FIELDS: { key: string; label: string; numeric?: boolean }[] = [
-  { key: 'weight', label: 'Poids (ct)', numeric: true },
-  { key: 'costPrice', label: "Prix d'achat", numeric: true },
-  { key: 'sellingPrice', label: 'Prix de vente', numeric: true },
-  { key: 'type', label: 'Variété' },
-  { key: 'cut', label: 'Taille' },
-  { key: 'color', label: 'Couleur' },
-  { key: 'clarity', label: 'Pureté' },
-  { key: 'origin', label: 'Origine' },
-  { key: 'treatment', label: 'Traitement' },
-  { key: 'dealer', label: 'Fournisseur' },
-  { key: 'certAuthority', label: 'Certificat : organisme' },
-  { key: 'certNumber', label: 'Certificat : numéro' }
+// Champs corrigeables sur une pierre vendue (miroir de CORRECTABLE_GEM_FIELDS côté serveur).
+// Une donnée qui provient d'un document se corrige sur le document : la description de la
+// marchandise (facture de vente) par un avoir, le fournisseur et le prix d'achat (achat) dans l'achat.
+const CORRECTABLE_FIELDS: { key: string; label: string; numeric?: boolean; fromPurchase?: boolean }[] = [
+  { key: 'sellingPrice', label: 'Prix de vente (estimation)', numeric: true },
+  { key: 'costPrice', label: "Prix d'achat", numeric: true, fromPurchase: true },
+  { key: 'dealer', label: 'Fournisseur', fromPurchase: true }
 ];
 
 export default function InventoryManager({
@@ -190,7 +183,7 @@ export default function InventoryManager({
   // Pierre vendue : le cœur de la fiche est verrouillé, on ne corrige que par une correction tracée
   const soldLocked = selectedGem?.status === 'Vendu';
   const [showCorrection, setShowCorrection] = useState(false);
-  const [corrField, setCorrField] = useState('weight');
+  const [corrField, setCorrField] = useState('sellingPrice');
   const [corrValue, setCorrValue] = useState('');
   const [corrReason, setCorrReason] = useState('');
   const [corrError, setCorrError] = useState('');
@@ -767,13 +760,17 @@ export default function InventoryManager({
                     <p className="text-[10px] text-violet-200 leading-snug">
                       La correction est enregistrée dans l'historique de la pierre (ancienne valeur, nouvelle valeur, motif).
                     </p>
+                    <p id="correction-rules" className="text-[10px] text-gray-400 leading-snug">
+                      {selectedGem?.sourcePurchaseId && "Le fournisseur et le prix d'achat proviennent de l'achat d'origine : modifiez-les dans « Achats & Lots », la fiche suivra. "}
+                      Une erreur sur la description de la pierre (variété, poids, taille, couleur, pureté, origine, traitement, certificat) se corrige par un avoir sur la facture de vente, puis une nouvelle facture.
+                    </p>
                     <select
                       id="correction-field"
                       value={corrField}
                       onChange={(e) => { setCorrField(e.target.value); setCorrValue(''); setCorrError(''); }}
                       className="w-full px-3 py-1.5 text-xs bg-[#171e2c] border border-[#27354d] text-gray-200 rounded-lg"
                     >
-                      {CORRECTABLE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                      {CORRECTABLE_FIELDS.filter(f => !(f.fromPurchase && selectedGem?.sourcePurchaseId)).map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
                     </select>
                     <input
                       id="correction-value"
