@@ -29,7 +29,7 @@ interface SalesManagerProps {
   clients: Client[];
   gemstones: Gemstone[];
   companySettings?: CompanySettings | null;
-  onSaveInvoice: (inv: SalesInvoice) => Promise<void> | void;
+  onSaveInvoice: (inv: SalesInvoice) => Promise<boolean>;
   onDeleteInvoice: (id: string) => Promise<void> | void;
   onRefreshGemstones: () => Promise<void> | void; // to reload status changes
   onSaveClient: (c: Client) => Promise<boolean | void> | boolean | void;
@@ -48,6 +48,9 @@ export default function SalesManager({
   const [viewMode, setViewMode] = useState<'list' | 'create' | 'view' | 'edit'>('list');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
+  // Confirmations affichées à l'endroit du clic (pas de fenêtre du navigateur)
+  const [confirmPaidId, setConfirmPaidId] = useState<string | null>(null);
+  const [confirmEmit, setConfirmEmit] = useState(false);
 
   // Création d'un client sans quitter la facturation : même fenêtre que « Tiers & CSV »
   const [isQuickClientModalOpen, setIsQuickClientModalOpen] = useState(false);
@@ -82,7 +85,7 @@ export default function SalesManager({
     clientId: string;
     date: string;
     dueDate: string;
-    status: 'Brouillon' | 'Payée' | 'En attente' | 'Annulée';
+    status: 'Payée' | 'En attente'; // règlement à l'émission (un brouillon est enregistré à part)
     paymentMethod: 'Virement' | 'Carte' | 'Espèces' | 'Autre';
     discount: number;
     notes: string;
@@ -232,8 +235,8 @@ export default function SalesManager({
   const totals = calculateFormTotals();
 
   // Save the invoice draft
-  const handleSaveInvoiceSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // emit=false : enregistre un brouillon (modifiable, supprimable) ; emit=true : émet la facture
+  const saveInvoice = async (emit: boolean) => {
     if (!invoiceForm.invoiceNumber || !invoiceForm.clientId || invoiceForm.items.length === 0) return;
 
     const selectedClient = clients.find(c => c.id === invoiceForm.clientId);
@@ -251,14 +254,37 @@ export default function SalesManager({
       totalExclTax: totals.totalExclTax,
       vatAmount: totals.vatAmount,
       totalInclTax: totals.totalInclTax,
-      status: invoiceForm.status,
+      status: emit ? invoiceForm.status : 'Brouillon',
       paymentMethod: invoiceForm.paymentMethod,
       notes: invoiceForm.notes
     };
 
-    await onSaveInvoice(draftInvoice);
+    // En cas de refus du serveur, le formulaire reste ouvert avec la saisie
+    const saved = await onSaveInvoice(draftInvoice);
+    setConfirmEmit(false);
+    if (!saved) return;
     await onRefreshGemstones(); // reload gemstone statuses
     setViewMode('list');
+  };
+
+  const handleSaveInvoiceSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (invoiceForm.items.length > 0) setConfirmEmit(true);
+  };
+
+  useEffect(() => { setConfirmEmit(false); setConfirmPaidId(null); }, [viewMode]);
+
+  // La facture affichée suit la liste rechargée (règlement, copie figée...)
+  useEffect(() => {
+    if (!selectedInvoice) return;
+    const fresh = invoices.find(i => i.id === selectedInvoice.id);
+    if (fresh && fresh !== selectedInvoice) setSelectedInvoice(fresh);
+  }, [invoices]);
+
+  // Facture émise : seul le règlement peut encore évoluer (En attente → Payée)
+  const handleMarkPaid = async (inv: SalesInvoice) => {
+    await onSaveInvoice({ ...inv, status: 'Payée' });
+    setConfirmPaidId(null);
   };
 
   // View an invoice
@@ -275,7 +301,7 @@ export default function SalesManager({
       clientId: inv.clientId,
       date: inv.date,
       dueDate: inv.dueDate,
-      status: inv.status,
+      status: inv.status === 'Payée' ? 'Payée' : 'En attente',
       paymentMethod: inv.paymentMethod,
       discount: inv.discount,
       notes: inv.notes || '',
@@ -410,20 +436,48 @@ export default function SalesManager({
                             >
                               <Printer className="h-3.5 w-3.5" />
                             </button>
+                            {inv.status === 'En attente' && (confirmPaidId === inv.id ? (
+                              <span className="flex items-center gap-1 text-[10px] text-emerald-400">
+                                <span>Encaissée ?</span>
+                                <button
+                                  id="btn-confirm-paid"
+                                  onClick={() => handleMarkPaid(inv)}
+                                  className="px-2 py-1 bg-emerald-500/15 border border-emerald-500/40 rounded text-emerald-300 hover:bg-emerald-500/25 cursor-pointer"
+                                >
+                                  Oui
+                                </button>
+                                <button
+                                  onClick={() => setConfirmPaidId(null)}
+                                  className="px-2 py-1 bg-[#171e2c] border border-gray-800 rounded text-gray-400 hover:text-white cursor-pointer"
+                                >
+                                  Non
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmPaidId(inv.id)}
+                                title="Marquer comme payée"
+                                className="p-1 px-1.5 bg-[#171e2c] border border-gray-800 rounded text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/40 transition-all cursor-pointer"
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                            ))}
+                            {inv.status === 'Brouillon' && (<>
                             <button
                               onClick={() => handleSelectInvoiceForEdit(inv)}
-                              title="Éditer"
+                              title="Éditer le brouillon"
                               className="p-1 px-1.5 bg-[#171e2c] border border-gray-800 rounded text-blue-400 hover:bg-blue-400/5 hover:border-blue-400/35 transition-all cursor-pointer"
                             >
                               <Pen className="h-3.5 w-3.5" />
                             </button>
                             <button
                               onClick={() => onDeleteInvoice(inv.id)}
-                              title="Supprimer"
+                              title="Supprimer le brouillon"
                               className="p-1 px-1.5 bg-[#1c1218] border border-red-500/10 rounded text-red-400 hover:bg-red-500/10 hover:border-red-500/40 transition-all cursor-pointer"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
+                            </>)}
                           </div>
                         </td>
                       </tr>
@@ -439,15 +493,6 @@ export default function SalesManager({
       {/* VIEW 2: CREATE/EDIT INVOICE */}
       {(viewMode === 'create' || viewMode === 'edit') && (
         <form onSubmit={handleSaveInvoiceSubmit} className="space-y-6 text-xs no-print">
-          {viewMode === 'edit' && selectedInvoice && selectedInvoice.status !== 'Brouillon' && (
-            <div id="invoice-edit-warning" className="text-[11px] rounded-lg px-3 py-2.5 border bg-amber-500/10 border-amber-500/25 text-amber-500 leading-relaxed">
-              Cette facture a déjà été émise. Une facture émise ne devrait plus être modifiée : pour corriger une erreur,
-              il faudra émettre un avoir (fonction à venir).{' '}
-              {selectedInvoice.sellerSnapshot
-                ? 'Les coordonnées du vendeur et du client restent figées.'
-                : "Cette ancienne facture n'a pas de copie figée : elle affiche les coordonnées actuelles."}
-            </div>
-          )}
           
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
@@ -538,7 +583,7 @@ export default function SalesManager({
                 </div>
 
                 <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">STATUT COMPTABLE INITIAL</label>
+                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">RÈGLEMENT À L'ÉMISSION</label>
                   <select
                     value={invoiceForm.status}
                     onChange={(e) => setInvoiceForm({...invoiceForm, status: e.target.value as any})}
@@ -546,7 +591,6 @@ export default function SalesManager({
                   >
                     <option value="En attente">En attente (Non payé)</option>
                     <option value="Payée">Payée (Trésorerie encaissée)</option>
-                    <option value="Brouillon">Brouillon (Devis en cours)</option>
                   </select>
                 </div>
               </div>
@@ -799,6 +843,29 @@ export default function SalesManager({
               </div>
 
               {/* Submitions */}
+              {confirmEmit ? (
+              <div id="invoice-emit-confirm" className="space-y-2">
+                <div className="text-[11px] rounded-lg px-3 py-2.5 border bg-amber-500/10 border-amber-500/25 text-amber-500 leading-relaxed">
+                  Une fois émise, la facture ne pourra plus être modifiée ni supprimée : une erreur se corrige par un avoir.
+                </div>
+                <button
+                  id="btn-confirm-emit"
+                  type="button"
+                  onClick={() => saveInvoice(true)}
+                  className="w-full py-2.5 font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer bg-gradient-to-r from-[#8a733e] to-[#bda165] hover:opacity-90 text-black shadow-lg shadow-yellow-500/5"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>Confirmer l'émission</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmEmit(false)}
+                  className="w-full py-2 bg-transparent text-gray-400 hover:text-white border border-[#232f45] hover:bg-gray-900/30 rounded-lg text-center font-medium cursor-pointer"
+                >
+                  Revenir à la facture
+                </button>
+              </div>
+              ) : (
               <div className="space-y-2">
                 <button
                   type="submit"
@@ -806,7 +873,17 @@ export default function SalesManager({
                   className={`w-full py-2.5 font-semibold rounded-lg flex items-center justify-center gap-2 cursor-pointer ${invoiceForm.items.length > 0 ? 'bg-gradient-to-r from-[#8a733e] to-[#bda165] hover:opacity-90 text-black shadow-lg shadow-yellow-500/5' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}
                 >
                   <Check className="h-4 w-4" />
-                  <span>Enregistrer & Finaliser la facture</span>
+                  <span>Émettre la facture</span>
+                </button>
+
+                <button
+                  id="btn-save-invoice-draft"
+                  type="button"
+                  onClick={() => saveInvoice(false)}
+                  disabled={invoiceForm.items.length === 0}
+                  className={`w-full py-2 rounded-lg text-center font-medium border ${invoiceForm.items.length > 0 ? 'bg-transparent text-[#e0b760] border-[#8a733e]/60 hover:bg-amber-400/5 cursor-pointer' : 'text-gray-600 border-gray-800 cursor-not-allowed'}`}
+                >
+                  Enregistrer comme brouillon
                 </button>
                 
                 <button
@@ -817,6 +894,7 @@ export default function SalesManager({
                   Abandonner la saisie
                 </button>
               </div>
+              )}
 
             </div>
 
@@ -840,13 +918,42 @@ export default function SalesManager({
             </button>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleSelectInvoiceForEdit(selectedInvoice)}
-                className="px-3.5 py-1.5 text-xs bg-[#171e2c] border border-[blue]/20 text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/40 rounded-lg flex items-center gap-1.5 cursor-pointer"
-              >
-                <Pen className="h-4 w-4" />
-                <span>Éditer la facture</span>
-              </button>
+              {selectedInvoice.status === 'Brouillon' && (
+                <button
+                  onClick={() => handleSelectInvoiceForEdit(selectedInvoice)}
+                  className="px-3.5 py-1.5 text-xs bg-[#171e2c] border border-[blue]/20 text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/40 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Pen className="h-4 w-4" />
+                  <span>Modifier le brouillon</span>
+                </button>
+              )}
+              {selectedInvoice.status === 'En attente' && (confirmPaidId === selectedInvoice.id ? (
+                <div className="flex items-center gap-2 text-xs text-emerald-400">
+                  <span>Paiement de {formatCurrency(selectedInvoice.totalInclTax)} € encaissé ?</span>
+                  <button
+                    id="btn-confirm-paid"
+                    onClick={() => handleMarkPaid(selectedInvoice)}
+                    className="px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/40 rounded-lg text-emerald-300 hover:bg-emerald-500/25 cursor-pointer"
+                  >
+                    Oui, marquer payée
+                  </button>
+                  <button
+                    onClick={() => setConfirmPaidId(null)}
+                    className="px-3 py-1.5 bg-[#171e2c] border border-gray-800 rounded-lg text-gray-400 hover:text-white cursor-pointer"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              ) : (
+                <button
+                  id="btn-mark-invoice-paid"
+                  onClick={() => setConfirmPaidId(selectedInvoice.id)}
+                  className="px-3.5 py-1.5 text-xs bg-[#171e2c] border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="h-4 w-4" />
+                  <span>Marquer comme payée</span>
+                </button>
+              ))}
               <button
                 onClick={handlePrint}
                 className="px-4 py-2 text-xs font-semibold bg-[#bda165] text-black hover:bg-[#a98f56] rounded-lg flex items-center gap-2 cursor-pointer shadow"

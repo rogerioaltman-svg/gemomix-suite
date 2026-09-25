@@ -279,7 +279,7 @@ export default function App() {
   };
 
   // --- Sales Invoice CRUD handlers ---
-  const handleSaveInvoice = async (savedInv: SalesInvoice) => {
+  const handleSaveInvoice = async (savedInv: SalesInvoice): Promise<boolean> => {
     if (await callApi('/api/sales-invoices', 'POST', savedInv)) {
       const [invList, gemList] = await Promise.all([
         fetch('/api/sales-invoices').then(r => r.json()),
@@ -287,7 +287,9 @@ export default function App() {
       ]);
       setInvoices(invList);
       setGemstones(Array.isArray(gemList) ? gemList.map(normalizeGemstone) : []);
+      return true;
     }
+    return false;
   };
 
   const handleDeleteInvoice = (id: string) => {

@@ -1164,9 +1164,37 @@ function buildClientSnapshot(conn: Database.Database, inv: SalesInvoice): Client
   };
 }
 
+// Une facture émise est verrouillée : refus (409 côté API) au lieu d'une modification silencieuse
+export class InvoiceLockedError extends Error {}
+
+const LOCKED_INVOICE_MESSAGE = "Cette facture est émise : elle n'est plus modifiable. Corrigez-la par un avoir.";
+
+// Seuls le statut de règlement (En attente → Payée) et le mode de paiement peuvent encore
+// évoluer sur une facture émise ; tout le reste est comparé à ce qui est enregistré.
+function assertInvoiceUnchanged(existing: SalesInvoice, inv: SalesInvoice): void {
+  const same =
+    existing.invoiceNumber === inv.invoiceNumber &&
+    existing.date === inv.date &&
+    existing.dueDate === inv.dueDate &&
+    existing.clientId === inv.clientId &&
+    existing.clientName === inv.clientName &&
+    (existing.discount ?? 0) === (inv.discount ?? 0) &&
+    existing.totalExclTax === inv.totalExclTax &&
+    existing.vatAmount === inv.vatAmount &&
+    existing.totalInclTax === inv.totalInclTax &&
+    (existing.notes ?? '') === (inv.notes ?? '') &&
+    JSON.stringify(existing.items ?? []) === JSON.stringify(inv.items ?? []);
+  if (!same) throw new InvoiceLockedError(LOCKED_INVOICE_MESSAGE);
+  const allowedStatus =
+    inv.status === existing.status || (existing.status === 'En attente' && inv.status === 'Payée');
+  if (!allowedStatus) throw new InvoiceLockedError(LOCKED_INVOICE_MESSAGE);
+}
+
 export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
   const conn = getConnection();
   const run = conn.transaction(() => {
+    const row = conn.prepare('SELECT * FROM sales_invoices WHERE id = ?').get(inv.id);
+    if (row && (row as any).status !== 'Brouillon') assertInvoiceUnchanged(rowToInvoice(row), inv);
     // La copie figée est décidée ici, par le serveur, et jamais par le navigateur : ce qui est
     // déjà enregistré est conservé tel quel, ce que le client envoie à ce sujet est ignoré.
     // Elle n'est créée qu'au passage du brouillon à l'émission : une ancienne facture déjà émise
@@ -1204,6 +1232,10 @@ export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
 }
 
 export async function deleteSalesInvoice(id: string): Promise<void> {
+  const row = getConnection().prepare('SELECT status FROM sales_invoices WHERE id = ?').get(id) as { status: string } | undefined;
+  if (row && row.status !== 'Brouillon') {
+    throw new InvoiceLockedError("Une facture émise ne peut pas être supprimée. Corrigez-la par un avoir.");
+  }
   getConnection().prepare('UPDATE sales_invoices SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
 }
 

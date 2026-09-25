@@ -16,7 +16,7 @@ import {
   getAllLots, saveLot, deleteLot,
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
-  getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice,
+  getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice, InvoiceLockedError,
   getCompanySettings, saveCompanySettings,
   getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
   getTrash, restoreTrashItem,
@@ -299,6 +299,7 @@ app.post('/api/sales-invoices', async (req, res) => {
     await saveSalesInvoice(inv);
     res.json({ success: true });
   } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error saving invoice:", error);
     res.status(500).json({ error: "Erreur d'enregistrement de la facture de vente." });
   }
@@ -309,6 +310,7 @@ app.delete('/api/sales-invoices/:id', async (req, res) => {
     await deleteSalesInvoice(req.params.id);
     res.json({ success: true });
   } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error deleting invoice:", error);
     res.status(500).json({ error: "Erreur de suppression de la facture de vente." });
   }
