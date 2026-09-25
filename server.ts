@@ -17,7 +17,7 @@ import {
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
   getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice, InvoiceLockedError,
-  getInvoicingStatus, startLiveInvoicing, purgeTestInvoices, createCreditNote,
+  getInvoicingStatus, startLiveInvoicing, purgeTestInvoices, createCreditNote, correctSoldGemstone,
   getCompanySettings, saveCompanySettings,
   getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
   getTrash, restoreTrashItem,
@@ -107,6 +107,18 @@ app.post('/api/gemstones', async (req, res) => {
 });
 
 // Delete a gemstone
+app.post('/api/gemstones/:id/correction', async (req, res) => {
+  try {
+    const { field, value, reason } = req.body ?? {};
+    await correctSoldGemstone(req.params.id, field, value, reason);
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
+    console.error("Error correcting gemstone:", error);
+    res.status(500).json({ error: "Erreur lors de la correction de la pierre précieuse." });
+  }
+});
+
 app.delete('/api/gemstones/:id', async (req, res) => {
   try {
     const { id } = req.params;

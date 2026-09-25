@@ -375,6 +375,17 @@ export default function App() {
   };
 
   // Delete stone handler
+  // Correction tracée d'une donnée sur une pierre vendue (motif obligatoire)
+  const handleCorrectGemstone = async (id: string, field: string, value: string, reason: string): Promise<boolean> => {
+    if (!(await callApi(`/api/gemstones/${id}/correction`, 'POST', { field, value, reason }))) return false;
+    const gemList = await fetch('/api/gemstones').then(r => (r.ok ? r.json() : []));
+    const list = Array.isArray(gemList) ? gemList.map(normalizeGemstone) : [];
+    setGemstones(list);
+    const updated = list.find(g => g.id === id);
+    if (updated) setSelectedGem(updated);
+    return true;
+  };
+
   const handleDeleteGemstone = (id: string) => {
     const gem = gemstones.find(g => g.id === id);
     if (!gem) return;
@@ -640,6 +651,7 @@ export default function App() {
             suppliers={suppliers}
             onSaveSupplier={handleSaveSupplier}
             onDeleteGem={handleDeleteGemstone}
+            onCorrectGem={handleCorrectGemstone}
             onUpdateGemInline={handleUpdateGemstoneInline}
             onGenerateCertificate={(ref) => {
               setSelectedCertGemRef(ref);

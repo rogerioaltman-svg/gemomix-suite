@@ -105,9 +105,26 @@ interface InventoryManagerProps {
   priceGuide?: PriceGuideEntry[];
   purchases?: Purchase[];
   onDeleteGem?: (id: string) => void;
+  onCorrectGem?: (id: string, field: string, value: string, reason: string) => Promise<boolean>;
   onUpdateGemInline?: (gem: Gemstone) => void;
   onGenerateCertificate?: (reference: string) => void;
 }
+
+// Champs corrigeables sur une pierre vendue (miroir de CORRECTABLE_GEM_FIELDS côté serveur)
+const CORRECTABLE_FIELDS: { key: string; label: string; numeric?: boolean }[] = [
+  { key: 'weight', label: 'Poids (ct)', numeric: true },
+  { key: 'costPrice', label: "Prix d'achat", numeric: true },
+  { key: 'sellingPrice', label: 'Prix de vente', numeric: true },
+  { key: 'type', label: 'Variété' },
+  { key: 'cut', label: 'Taille' },
+  { key: 'color', label: 'Couleur' },
+  { key: 'clarity', label: 'Pureté' },
+  { key: 'origin', label: 'Origine' },
+  { key: 'treatment', label: 'Traitement' },
+  { key: 'dealer', label: 'Fournisseur' },
+  { key: 'certAuthority', label: 'Certificat : organisme' },
+  { key: 'certNumber', label: 'Certificat : numéro' }
+];
 
 export default function InventoryManager({
   gemstones,
@@ -119,6 +136,7 @@ export default function InventoryManager({
   suppliers = [],
   onSaveSupplier,
   onDeleteGem,
+  onCorrectGem,
   onUpdateGemInline,
   onGenerateCertificate
 }: InventoryManagerProps) {
@@ -168,6 +186,28 @@ export default function InventoryManager({
   // Faux tant que la photo d'une pierre existante n'est pas chargée : on n'envoie alors
   // pas le champ image à l'enregistrement, pour ne jamais écraser la photo stockée
   const [imageReady, setImageReady] = useState(true);
+
+  // Pierre vendue : le cœur de la fiche est verrouillé, on ne corrige que par une correction tracée
+  const soldLocked = selectedGem?.status === 'Vendu';
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [corrField, setCorrField] = useState('weight');
+  const [corrValue, setCorrValue] = useState('');
+  const [corrReason, setCorrReason] = useState('');
+  const [corrError, setCorrError] = useState('');
+  const [corrBusy, setCorrBusy] = useState(false);
+  useEffect(() => { setShowCorrection(false); setCorrValue(''); setCorrReason(''); setCorrError(''); }, [selectedGem?.id]);
+
+  const submitCorrection = async () => {
+    if (!onCorrectGem || !selectedGem) return;
+    if (corrValue.trim() === '') { setCorrError('Saisissez la nouvelle valeur.'); return; }
+    if (corrReason.trim().length < 3) { setCorrError('Le motif est obligatoire.'); return; }
+    setCorrBusy(true);
+    setCorrError('');
+    const ok = await onCorrectGem(selectedGem.id, corrField, corrValue, corrReason.trim());
+    setCorrBusy(false);
+    if (ok) { setShowCorrection(false); setCorrValue(''); setCorrReason(''); }
+    else setCorrError('Correction refusée par le serveur (voir le message en haut de page).');
+  };
 
   // Manage selection update
   useEffect(() => {
@@ -395,8 +435,8 @@ export default function InventoryManager({
                 id="btn-fiche-delete"
                 type="button"
                 onClick={() => onDeleteGem(id)}
-                disabled={selectedGem?.status === 'Vendu'}
-                title={selectedGem?.status === 'Vendu' ? 'Une pierre vendue figure sur une facture : elle ne peut pas être supprimée.' : undefined}
+                disabled={soldLocked}
+                title={soldLocked ? 'Une pierre vendue figure sur une facture : elle ne peut pas être supprimée.' : undefined}
                 className="px-3 py-1.5 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -430,7 +470,7 @@ export default function InventoryManager({
                   <span>RÉFÉRENCE UNIQUE *</span>
                   {selectedGem?.sourcePurchaseId && <Lock className="h-3 w-3 text-gray-500 normal-case" />}
                 </label>
-                <input
+                <input disabled={soldLocked}
                   id="gem-ref-input"
                   type="text"
                   readOnly={!!selectedGem?.sourcePurchaseId}
@@ -446,7 +486,7 @@ export default function InventoryManager({
               {/* Gemstone Variety */}
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">VARIÉTÉ / ESPÈCE DE PIERRE</label>
-                <select 
+                <select disabled={soldLocked} 
                   value={type}
                   onChange={(e) => handleTypeChange(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none focus:border-[#b4985c]"
@@ -462,7 +502,7 @@ export default function InventoryManager({
                   <option value="Autre (Saisir)">Autre (Saisir)</option>
                 </select>
                 {type === 'Autre (Saisir)' && (
-                  <input 
+                  <input disabled={soldLocked} 
                     type="text" 
                     value={customType}
                     onChange={(e) => setCustomType(e.target.value)}
@@ -481,7 +521,7 @@ export default function InventoryManager({
                   <span>POIDS (cts) *</span>
                 </label>
                 <div className="relative">
-                  <input 
+                  <input disabled={soldLocked} 
                     type="number" 
                     step="0.01"
                     min="0.01"
@@ -497,7 +537,7 @@ export default function InventoryManager({
               {/* Cut shape */}
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">TYPE DE TAILLE</label>
-                <input 
+                <input disabled={soldLocked} 
                   type="text" 
                   value={cut} 
                   onChange={(e) => setCut(e.target.value)}
@@ -509,7 +549,7 @@ export default function InventoryManager({
               {/* Color Grade */}
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">COULEUR / GRADE</label>
-                <input 
+                <input disabled={soldLocked} 
                   type="text" 
                   value={color} 
                   onChange={(e) => setColor(e.target.value)}
@@ -521,7 +561,7 @@ export default function InventoryManager({
               {/* Clarity Grade */}
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">PURETÉ / CLARTÉ</label>
-                <input 
+                <input disabled={soldLocked} 
                   type="text" 
                   value={clarity} 
                   onChange={(e) => setClarity(e.target.value)}
@@ -536,7 +576,7 @@ export default function InventoryManager({
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-gray-500 text-[10px] uppercase font-mono">Longueur</label>
-                  <input 
+                  <input disabled={soldLocked} 
                     type="number" 
                     step="0.01" 
                     value={length} 
@@ -546,7 +586,7 @@ export default function InventoryManager({
                 </div>
                 <div>
                   <label className="text-gray-500 text-[10px] uppercase font-mono">Largeur</label>
-                  <input 
+                  <input disabled={soldLocked} 
                     type="number" 
                     step="0.01" 
                     value={width} 
@@ -556,7 +596,7 @@ export default function InventoryManager({
                 </div>
                 <div>
                   <label className="text-gray-500 text-[10px] uppercase font-mono">Profondeur</label>
-                  <input 
+                  <input disabled={soldLocked} 
                     type="number" 
                     step="0.01" 
                     value={depth} 
@@ -577,7 +617,7 @@ export default function InventoryManager({
               {/* Refraction Index */}
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">INDICE DE RÉFRACTION (IR)</label>
-                <input 
+                <input disabled={soldLocked} 
                   type="text" 
                   value={refractiveIndex} 
                   onChange={(e) => setRefractiveIndex(e.target.value)}
@@ -589,7 +629,7 @@ export default function InventoryManager({
               {/* Density Specific Gravity */}
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">DENSITÉ SPÉCIFIQUE (SG)</label>
-                <input 
+                <input disabled={soldLocked} 
                   type="number" 
                   step="0.01"
                   value={specificGravity} 
@@ -604,7 +644,7 @@ export default function InventoryManager({
               {/* Treatment */}
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">TRAITEMENTS DÉTECTÉS</label>
-                <input 
+                <input disabled={soldLocked} 
                   type="text" 
                   value={treatment} 
                   onChange={(e) => setTreatment(e.target.value)}
@@ -617,7 +657,7 @@ export default function InventoryManager({
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">ORIGINE GÉOGRAPHIQUE</label>
                 <div className="space-y-1.5">
-                  <select 
+                  <select disabled={soldLocked} 
                     value={isManualOrigin ? "__manual__" : origin} 
                     onChange={(e) => {
                       const val = e.target.value;
@@ -644,7 +684,7 @@ export default function InventoryManager({
                   </select>
                   
                   {isManualOrigin && (
-                    <input 
+                    <input disabled={soldLocked} 
                       type="text" 
                       value={origin} 
                       onChange={(e) => setOrigin(e.target.value)}
@@ -682,7 +722,7 @@ export default function InventoryManager({
                   );
                 })()
               ) : (
-                <select
+                <select disabled={soldLocked}
                   id="provenance-select"
                   value={provenance}
                   onChange={(e) => setProvenance(e.target.value)}
@@ -699,7 +739,7 @@ export default function InventoryManager({
               <select
                 id="gem-status-select"
                 value={status}
-                disabled={selectedGem?.status === 'Vendu'}
+                disabled={soldLocked}
                 onChange={(e) => { setStatus(e.target.value as any); setSellingPriceError(''); }}
                 className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none focus:border-[#b4985c] disabled:opacity-60 disabled:cursor-not-allowed"
               >
@@ -708,10 +748,74 @@ export default function InventoryManager({
                 <option value="Vendu">Vendu</option>
                 <option value="Confié">Confié</option>
               </select>
-              {selectedGem?.status === 'Vendu' && (
+              {soldLocked && (
+                <>
                 <p id="gem-sold-note" className="mt-1 text-[10px] text-gray-500 leading-snug">
-                  Pierre vendue : son statut ne change que par un avoir sur la facture de vente.
+                  Pierre vendue : sa fiche est verrouillée (seuls la description, l'emplacement et la photo restent modifiables) et son statut ne change que par un avoir sur la facture de vente.
                 </p>
+                {onCorrectGem && (showCorrection ? (
+                  <div id="correction-panel" className="mt-2 rounded-lg border border-violet-500/30 bg-violet-500/10 p-3 space-y-2">
+                    <p className="text-[10px] text-violet-200 leading-snug">
+                      La correction est enregistrée dans l'historique de la pierre (ancienne valeur, nouvelle valeur, motif).
+                    </p>
+                    <select
+                      id="correction-field"
+                      value={corrField}
+                      onChange={(e) => { setCorrField(e.target.value); setCorrValue(''); setCorrError(''); }}
+                      className="w-full px-3 py-1.5 text-xs bg-[#171e2c] border border-[#27354d] text-gray-200 rounded-lg"
+                    >
+                      {CORRECTABLE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
+                    <input
+                      id="correction-value"
+                      type={CORRECTABLE_FIELDS.find(f => f.key === corrField)?.numeric ? 'number' : 'text'}
+                      step="any"
+                      value={corrValue}
+                      onChange={(e) => setCorrValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+                      placeholder="Nouvelle valeur"
+                      className="w-full px-3 py-1.5 text-xs bg-[#171e2c] border border-[#27354d] text-white rounded-lg"
+                    />
+                    <input
+                      id="correction-reason"
+                      type="text"
+                      value={corrReason}
+                      onChange={(e) => setCorrReason(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitCorrection(); } }}
+                      placeholder="Motif (obligatoire)"
+                      className="w-full px-3 py-1.5 text-xs bg-[#171e2c] border border-[#27354d] text-white rounded-lg"
+                    />
+                    {corrError && <p id="correction-error" className="text-red-400 text-[10px]">{corrError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        id="btn-confirm-correction"
+                        type="button"
+                        disabled={corrBusy}
+                        onClick={submitCorrection}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-500/20 border border-violet-500/40 text-violet-100 hover:bg-violet-500/30 disabled:opacity-50 cursor-pointer"
+                      >
+                        Enregistrer la correction
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowCorrection(false); setCorrError(''); }}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:text-white cursor-pointer"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    id="btn-open-correction"
+                    type="button"
+                    onClick={() => setShowCorrection(true)}
+                    className="mt-2 text-[11px] px-2.5 py-1 rounded border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 cursor-pointer"
+                  >
+                    Corriger une donnée…
+                  </button>
+                ))}
+                </>
               )}
             </div>
 
@@ -732,7 +836,7 @@ export default function InventoryManager({
             <div className="grid grid-cols-2 gap-3 p-3 bg-[#171e2c]/60 rounded-lg border border-gray-800/60">
               <div>
                 <label className="block text-gray-400 text-[10px] font-mono mb-1">PRIX D'ACHAT (€)</label>
-                <input
+                <input disabled={soldLocked}
                   type="number"
                   value={costPrice}
                   onChange={(e) => setCostPrice(e.target.value)}
@@ -744,7 +848,7 @@ export default function InventoryManager({
                 <label className="block text-gray-400 text-[10px] font-mono mb-1">
                   ESTIMATION (€) {status === 'Disponible' && <span className="text-red-400">*</span>}
                 </label>
-                <input
+                <input disabled={soldLocked}
                   id="gem-selling-price-input"
                   type="number"
                   value={sellingPrice}
@@ -760,7 +864,7 @@ export default function InventoryManager({
                 <label className="block text-gray-400 text-[10px] font-mono">BARÈME (VOS PALIERS €/CT)</label>
                 {tiersForType.length > 0 ? (
                   <>
-                    <select
+                    <select disabled={soldLocked}
                       id="tier-select"
                       value={selectedTierId}
                       onChange={(e) => setSelectedTierId(e.target.value)}
@@ -812,7 +916,7 @@ export default function InventoryManager({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-gray-400 text-xs font-mono mb-1">LABO EN CHARGE</label>
-                <select 
+                <select disabled={soldLocked} 
                   value={certAuthority}
                   onChange={(e) => setCertAuthority(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none"
@@ -832,7 +936,7 @@ export default function InventoryManager({
                   type="text" 
                   value={certNumber} 
                   onChange={(e) => setCertNumber(e.target.value)}
-                  disabled={certAuthority === 'Sans'}
+                  disabled={soldLocked || certAuthority === 'Sans'}
                   className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] rounded-lg text-white font-mono focus:outline-none focus:border-[#b4985c] disabled:opacity-40"
                   placeholder="ex: 2910481"
                 />
@@ -843,7 +947,7 @@ export default function InventoryManager({
             <div>
               <label className="block text-gray-400 text-xs font-mono mb-1">FOURNISSEUR / NÉGOCIANT</label>
               <div className="flex items-center gap-2">
-                <select
+                <select disabled={soldLocked}
                   id="gem-dealer-select"
                   value={dealer}
                   onChange={(e) => setDealer(e.target.value)}
@@ -875,7 +979,7 @@ export default function InventoryManager({
             <div>
               <label className="block text-gray-400 text-xs font-mono mb-1">CARACTÉRISTIQUES D'INCLUSIONS (LOUPE 10X)</label>
               <div className="flex gap-2">
-                <input 
+                <input disabled={soldLocked} 
                   type="text" 
                   value={newInclusion} 
                   onChange={(e) => setNewInclusion(e.target.value)}
@@ -886,7 +990,8 @@ export default function InventoryManager({
                 <button 
                   type="button" 
                   onClick={handleAddInclusion}
-                  className="px-2.5 bg-[#1f283b] hover:bg-[#2b3952] text-white rounded text-xs"
+                  disabled={soldLocked}
+                  className="px-2.5 bg-[#1f283b] hover:bg-[#2b3952] text-white rounded text-xs disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Ajouter
                 </button>
@@ -896,7 +1001,7 @@ export default function InventoryManager({
                 {inclusions.map((inc, i) => (
                   <span key={i} className="inline-flex items-center gap-1 bg-amber-500/10 text-amber-300 font-mono text-[9px] px-1.5 py-0.5 rounded border border-amber-500/15">
                     <span>{inc}</span>
-                    <button type="button" onClick={() => handleRemoveInclusion(i)} className="text-red-400 hover:text-red-200">×</button>
+                    {!soldLocked && <button type="button" onClick={() => handleRemoveInclusion(i)} className="text-red-400 hover:text-red-200">×</button>}
                   </span>
                 ))}
               </div>

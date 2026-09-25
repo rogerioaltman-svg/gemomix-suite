@@ -852,6 +852,24 @@ export async function getAllGemstones(): Promise<Gemstone[]> {
     .map(rowToGemstone);
 }
 
+// Pierre vendue : sa fiche est l'archive (prix d'achat, poids, certificat, provenance). Seuls la
+// description, l'emplacement et la photo restent modifiables ; le reste ne change que par une
+// correction tracée (correctSoldGemstone), jamais par une sauvegarde ordinaire.
+const SOLD_LOCKED_MESSAGE =
+  "Pierre vendue : cette donnée ne peut plus être modifiée directement. Utilisez « Corriger une donnée » (motif obligatoire, tracé dans l'historique).";
+
+function soldIdentity(g: Gemstone): string {
+  const n = (x: unknown) => Number(x) || 0;
+  return JSON.stringify([
+    g.reference, g.type, n(g.weight), g.cut ?? '', g.color ?? '', g.clarity ?? '',
+    n(g.dimensions?.length), n(g.dimensions?.width), n(g.dimensions?.depth),
+    g.refractiveIndex ?? '', n(g.specificGravity), g.treatment ?? '', g.origin ?? '',
+    g.certificate?.authority ?? 'Sans', g.certificate?.number ?? '',
+    n(g.costPrice), n(g.sellingPrice), g.dealer ?? '', g.inclusions ?? [],
+    g.provenance || (g.sourcePurchaseId ? 'Achat' : 'Stock initial'), g.sourcePurchaseId ?? '', g.sourceArticleId ?? ''
+  ]);
+}
+
 export async function saveGemstone(gem: Gemstone): Promise<void> {
   const conn = getConnection();
   // Module 7 : la référence d'une pierre issue d'un achat (n° facture/suffixe)
@@ -867,6 +885,10 @@ export async function saveGemstone(gem: Gemstone): Promise<void> {
   const finalGem: Gemstone = (existing && existing.source_purchase_id)
     ? { ...gem, reference: existing.reference }
     : gem;
+  if (existing?.status === 'Vendu') {
+    const currentRow = conn.prepare('SELECT * FROM gemstones WHERE id = ?').get(gem.id);
+    if (soldIdentity(rowToGemstone(currentRow)) !== soldIdentity(finalGem)) throw new InvoiceLockedError(SOLD_LOCKED_MESSAGE);
+  }
   upsertGemstone(conn, finalGem);
 
   // Module 10 : journalisation. On ne loggue jamais l'ACHAT ici — une pierre
@@ -894,6 +916,61 @@ export async function saveGemstone(gem: Gemstone): Promise<void> {
     logMovement(conn, 'AJUSTEMENT', 'gemstone', finalGem.id, finalGem.reference, delta, undefined,
       `Correction manuelle du poids : ${existing.weight} ct → ${finalGem.weight} ct`);
   }
+}
+
+// Champs corrigeables sur une pierre vendue : chaque correction exige un motif et laisse une trace
+// (mouvement AJUSTEMENT : ancienne valeur, nouvelle valeur, motif).
+export const CORRECTABLE_GEM_FIELDS: Record<string, { label: string; kind: 'text' | 'number' }> = {
+  type: { label: 'Variété', kind: 'text' },
+  weight: { label: 'Poids (ct)', kind: 'number' },
+  cut: { label: 'Taille', kind: 'text' },
+  color: { label: 'Couleur', kind: 'text' },
+  clarity: { label: 'Pureté', kind: 'text' },
+  origin: { label: 'Origine', kind: 'text' },
+  treatment: { label: 'Traitement', kind: 'text' },
+  dealer: { label: 'Fournisseur', kind: 'text' },
+  costPrice: { label: "Prix d'achat", kind: 'number' },
+  sellingPrice: { label: 'Prix de vente', kind: 'number' },
+  certAuthority: { label: 'Certificat : organisme', kind: 'text' },
+  certNumber: { label: 'Certificat : numéro', kind: 'text' }
+};
+
+export async function correctSoldGemstone(id: string, field: string, rawValue: unknown, reason: unknown): Promise<void> {
+  const conn = getConnection();
+  const run = conn.transaction(() => {
+    const row = conn.prepare('SELECT * FROM gemstones WHERE id = ?').get(id);
+    if (!row) throw new InvoiceLockedError('Pierre introuvable.');
+    if ((row as any).status !== 'Vendu') {
+      throw new InvoiceLockedError("Cette correction ne concerne que les pierres vendues : modifiez directement la fiche.");
+    }
+    const def = CORRECTABLE_GEM_FIELDS[field];
+    if (!def) throw new InvoiceLockedError("Ce champ ne peut pas être corrigé.");
+    const why = String(reason ?? '').trim();
+    if (why.length < 3) throw new InvoiceLockedError('Le motif de la correction est obligatoire.');
+
+    const gem = rowToGemstone(row);
+    const current: any = field === 'certAuthority' ? gem.certificate.authority : field === 'certNumber' ? gem.certificate.number : (gem as any)[field];
+    let next: string | number;
+    if (def.kind === 'number') {
+      next = Number(String(rawValue).replace(',', '.'));
+      if (!Number.isFinite(next) || next < 0 || (field === 'weight' && next <= 0)) {
+        throw new InvoiceLockedError('Valeur numérique invalide.');
+      }
+    } else {
+      next = String(rawValue ?? '').trim();
+      if (!next && (field === 'type' || field === 'certAuthority')) throw new InvoiceLockedError('Cette valeur ne peut pas être vide.');
+    }
+    if (String(current ?? '') === String(next)) throw new InvoiceLockedError("Aucun changement : la valeur saisie est identique.");
+
+    if (field === 'certAuthority') gem.certificate = { ...gem.certificate, authority: next as string };
+    else if (field === 'certNumber') gem.certificate = { ...gem.certificate, number: next as string };
+    else (gem as any)[field] = next;
+    upsertGemstone(conn, gem);
+
+    logMovement(conn, 'AJUSTEMENT', 'gemstone', gem.id, gem.reference, gem.weight, undefined,
+      `Correction (pierre vendue) — ${def.label} : ${current === '' || current == null ? '(vide)' : current} → ${next === '' ? '(vide)' : next}. Motif : ${why}`);
+  });
+  run();
 }
 
 export async function deleteGemstone(id: string): Promise<void> {
