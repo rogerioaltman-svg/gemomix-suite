@@ -100,6 +100,7 @@ app.post('/api/gemstones', async (req, res) => {
     await saveGemstone(gem);
     res.json({ success: true });
   } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error saving gemstone:", error);
     res.status(500).json({ error: "Erreur lors de la sauvegarde de la pierre précieuse." });
   }
@@ -112,6 +113,7 @@ app.delete('/api/gemstones/:id', async (req, res) => {
     await deleteGemstone(id);
     res.json({ success: true });
   } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error deleting gemstone:", error);
     res.status(500).json({ error: "Erreur lors de la suppression de la pierre précieuse." });
   }

@@ -1134,7 +1134,7 @@ export default function SalesManager({
                     <tr key={index} className="text-stone-800">
                       <td className="py-3 px-3">
                         <span className="font-bold block text-stone-900">{item.description}</span>
-                        {gemstoneRef(item.gemstoneId) && <span className="text-[9px] font-mono text-[#8a733e] block">Réf. pierre : {gemstoneRef(item.gemstoneId)}</span>}
+                        {(item.gemstoneReference ?? gemstoneRef(item.gemstoneId)) && <span className="text-[9px] font-mono text-[#8a733e] block">Réf. pierre : {item.gemstoneReference ?? gemstoneRef(item.gemstoneId)}</span>}
                       </td>
                       <td className="py-3 px-3 font-mono font-medium">{item.weight ? `${item.weight} ct` : '—'}</td>
                       <td className="py-3 px-3 text-center font-mono">{item.quantity}</td>

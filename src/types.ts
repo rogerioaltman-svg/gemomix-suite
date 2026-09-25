@@ -202,6 +202,7 @@ export interface Client {
 export interface InvoiceItem {
   id: string;
   gemstoneId?: string;
+  gemstoneReference?: string; // référence de la pierre copiée à l'émission (ne suit plus la fiche)
   description: string;
   weight?: number;
   quantity: number;

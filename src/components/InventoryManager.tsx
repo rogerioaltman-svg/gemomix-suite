@@ -395,7 +395,9 @@ export default function InventoryManager({
                 id="btn-fiche-delete"
                 type="button"
                 onClick={() => onDeleteGem(id)}
-                className="px-3 py-1.5 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg flex items-center gap-1.5 transition-colors"
+                disabled={selectedGem?.status === 'Vendu'}
+                title={selectedGem?.status === 'Vendu' ? 'Une pierre vendue figure sur une facture : elle ne peut pas être supprimée.' : undefined}
+                className="px-3 py-1.5 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 <span>Supprimer</span>
@@ -695,15 +697,22 @@ export default function InventoryManager({
             <div>
               <label className="block text-gray-400 text-xs font-mono mb-1">STATUT DE STOCK</label>
               <select
+                id="gem-status-select"
                 value={status}
+                disabled={selectedGem?.status === 'Vendu'}
                 onChange={(e) => { setStatus(e.target.value as any); setSellingPriceError(''); }}
-                className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none focus:border-[#b4985c]"
+                className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none focus:border-[#b4985c] disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="Disponible">Disponible</option>
                 <option value="Réservé">Réservé</option>
                 <option value="Vendu">Vendu</option>
                 <option value="Confié">Confié</option>
               </select>
+              {selectedGem?.status === 'Vendu' && (
+                <p id="gem-sold-note" className="mt-1 text-[10px] text-gray-500 leading-snug">
+                  Pierre vendue : son statut ne change que par un avoir sur la facture de vente.
+                </p>
+              )}
             </div>
 
             {/* Emplacement physique */}

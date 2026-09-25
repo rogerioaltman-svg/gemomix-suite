@@ -858,8 +858,12 @@ export async function saveGemstone(gem: Gemstone): Promise<void> {
   // ne doit jamais être modifiée après coup, même via la fiche d'inventaire —
   // sans quoi la nomenclature perdrait tout son sens. Les pierres saisies hors
   // achat (provenance manuelle) restent librement renommables.
-  const existing = conn.prepare('SELECT reference, source_purchase_id, weight, recuttings FROM gemstones WHERE id = ?').get(gem.id) as
-    { reference: string; source_purchase_id: string | null; weight: number; recuttings: string | null } | undefined;
+  const existing = conn.prepare('SELECT reference, source_purchase_id, weight, recuttings, status FROM gemstones WHERE id = ?').get(gem.id) as
+    { reference: string; source_purchase_id: string | null; weight: number; recuttings: string | null; status: string } | undefined;
+  // Une pierre vendue ne repasse en stock que par un avoir (createCreditNote), jamais à la main
+  if (existing?.status === 'Vendu' && gem.status !== 'Vendu') {
+    throw new InvoiceLockedError("Cette pierre est vendue : son statut ne change que par un avoir sur la facture de vente.");
+  }
   const finalGem: Gemstone = (existing && existing.source_purchase_id)
     ? { ...gem, reference: existing.reference }
     : gem;
@@ -893,6 +897,10 @@ export async function saveGemstone(gem: Gemstone): Promise<void> {
 }
 
 export async function deleteGemstone(id: string): Promise<void> {
+  const row = getConnection().prepare('SELECT status FROM gemstones WHERE id = ?').get(id) as { status: string } | undefined;
+  if (row?.status === 'Vendu') {
+    throw new InvoiceLockedError("Une pierre vendue ne peut pas être supprimée : elle figure sur une facture.");
+  }
   getConnection().prepare('UPDATE gemstones SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), id);
 }
 
@@ -1255,6 +1263,17 @@ export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
       invoiceNumber = '';
     }
     // Un avoir n'est créé que par createCreditNote : une sauvegarde ordinaire garde le type déjà enregistré
+    if (becomesIssued) {
+      const getRef = conn.prepare('SELECT reference FROM gemstones WHERE id = ?');
+      inv = {
+        ...inv,
+        items: (inv.items ?? []).map(it => {
+          if (!it.gemstoneId || it.gemstoneReference) return it;
+          const g = getRef.get(it.gemstoneId) as { reference: string } | undefined;
+          return g ? { ...it, gemstoneReference: g.reference } : it;
+        })
+      };
+    }
     inv = { ...inv, invoiceNumber, docType: (row as any)?.doc_type === 'avoir' ? 'avoir' : 'facture', creditedInvoiceId: (row as any)?.credited_invoice_id ?? undefined };
     upsertInvoice(conn, { ...inv, issuedAt, sellerSnapshot, clientSnapshot });
 
