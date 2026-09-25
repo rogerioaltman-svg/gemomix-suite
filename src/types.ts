@@ -256,6 +256,14 @@ export interface ClientSnapshot {
   vatNumber?: string;
 }
 
+// Mise en service de la facturation : tant qu'elle n'est pas « réelle », les factures de test
+// peuvent être purgées ; une fois démarrée, la purge n'est plus possible (irréversible).
+export interface InvoicingStatus {
+  live: boolean;
+  liveSince?: string;
+  invoiceCount: number; // toutes les factures, corbeille comprise
+}
+
 export interface SalesInvoice {
   id: string;
   invoiceNumber: string;

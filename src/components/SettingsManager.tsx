@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
-import { CompanySettings, PriceGuideEntry } from '../types';
+import { CompanySettings, PriceGuideEntry, InvoicingStatus } from '../types';
 import { Settings, Save, MapPin, Phone, Mail, Building2, Globe, CheckCircle, Database, Gem, Pencil, Trash2, Plus, X } from 'lucide-react';
 
 const COMMON_VARIETIES = ['Diamant', 'Saphir', 'Rubis', 'Émeraude', 'Tanzanite', 'Spinelle', 'Tourmaline', 'Topaze'];
@@ -11,10 +11,15 @@ interface SettingsManagerProps {
   priceGuide?: PriceGuideEntry[];
   onSavePriceGuideEntry?: (entry: PriceGuideEntry) => void;
   onDeletePriceGuideEntry?: (id: string) => void;
+  invoicingStatus?: InvoicingStatus | null;
+  onPurgeTestInvoices?: () => Promise<boolean>;
+  onStartLiveInvoicing?: () => Promise<boolean>;
 }
 
-export default function SettingsManager({ settings, onSaveSettings, priceGuide = [], onSavePriceGuideEntry, onDeletePriceGuideEntry }: SettingsManagerProps) {
+export default function SettingsManager({ settings, onSaveSettings, priceGuide = [], onSavePriceGuideEntry, onDeletePriceGuideEntry, invoicingStatus, onPurgeTestInvoices, onStartLiveInvoicing }: SettingsManagerProps) {
   const [isSaved, setIsSaved] = useState(false);
+  // Confirmations affichées sur place (pas de fenêtre du navigateur)
+  const [pendingAction, setPendingAction] = useState<'purge' | 'live' | null>(null);
   const [form, setForm] = useState<CompanySettings>({
     name: '',
     address: '',
@@ -301,6 +306,89 @@ export default function SettingsManager({ settings, onSaveSettings, priceGuide =
       </div>
 
       {/* Barème d'estimation par paliers métier */}
+      {invoicingStatus && (
+      <div className="bg-[#121620] border border-[#212a3d] rounded-2xl p-6 sm:p-8 shadow-xl" id="invoicing-setup-section">
+        <h3 className="text-base font-bold text-white mb-1">Mise en service de la facturation</h3>
+        {invoicingStatus.live ? (
+          <p className="text-xs text-emerald-400 leading-relaxed">
+            Facturation réelle démarrée le {new Date(invoicingStatus.liveSince ?? '').toLocaleDateString('fr-FR')}.
+            Les factures émises sont définitives : une erreur se corrige par un avoir.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-xs text-gray-400 leading-relaxed">
+              La facturation est en <span className="text-amber-400 font-semibold">mode test</span> : vous pouvez purger toutes les factures
+              d'essai ({invoicingStatus.invoiceCount} actuellement, corbeille comprise). Quand vos coordonnées sont à jour et que vous
+              êtes prêt à facturer pour de vrai, démarrez la facturation réelle : la purge ne sera alors plus possible.
+            </p>
+            {pendingAction === null && (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  id="btn-purge-test-invoices"
+                  type="button"
+                  disabled={invoicingStatus.invoiceCount === 0}
+                  onClick={() => setPendingAction('purge')}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Purger les factures de test
+                </button>
+                <button
+                  id="btn-start-live-invoicing"
+                  type="button"
+                  onClick={() => setPendingAction('live')}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 cursor-pointer"
+                >
+                  Démarrer la facturation réelle
+                </button>
+              </div>
+            )}
+            {pendingAction === 'purge' && (
+              <div id="purge-confirm" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 space-y-2">
+                <p className="text-xs text-red-300 leading-relaxed">
+                  Supprimer définitivement les {invoicingStatus.invoiceCount} factures (corbeille comprise) ? Cette action est irréversible.
+                  Le stock n'est pas modifié : les pierres déjà marquées « Vendu » le restent.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    id="btn-confirm-purge"
+                    type="button"
+                    onClick={async () => { await onPurgeTestInvoices?.(); setPendingAction(null); }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-red-500/20 border border-red-500/40 text-red-200 hover:bg-red-500/30 cursor-pointer"
+                  >
+                    Oui, tout purger
+                  </button>
+                  <button type="button" onClick={() => setPendingAction(null)} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:text-white cursor-pointer">
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+            {pendingAction === 'live' && (
+              <div id="live-confirm" className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-2">
+                <p className="text-xs text-emerald-300 leading-relaxed">
+                  Démarrer la facturation réelle ? C'est irréversible : les factures ne pourront plus être purgées.
+                  Vérifiez d'abord votre SIRET, votre TVA et vos coordonnées ci-dessus.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    id="btn-confirm-live"
+                    type="button"
+                    onClick={async () => { await onStartLiveInvoicing?.(); setPendingAction(null); }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/30 cursor-pointer"
+                  >
+                    Oui, démarrer
+                  </button>
+                  <button type="button" onClick={() => setPendingAction(null)} className="px-3 py-1.5 text-xs rounded-lg border border-gray-700 text-gray-300 hover:text-white cursor-pointer">
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      )}
+
       <div className="bg-[#121620] border border-[#212a3d] rounded-2xl p-6 sm:p-8 shadow-xl" id="price-guide-section">
         <div className="flex items-center gap-3 mb-6 border-b border-[#212a3d] pb-6">
           <div className="p-3 bg-[#bda165]/10 text-[#bda165] rounded-xl">

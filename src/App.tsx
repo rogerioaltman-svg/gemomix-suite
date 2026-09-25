@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, Bijou } from './types';
+import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, Bijou, InvoicingStatus } from './types';
 import { SEED_GEMSTONES, SEED_PURCHASES, SEED_LOTS } from './data';
 import Dashboard from './components/Dashboard';
 import InventoryManager from './components/InventoryManager';
@@ -184,6 +184,30 @@ export default function App() {
   };
 
   // --- Company Settings CRUD handlers ---
+  // --- Mise en service de la facturation (purge des tests, démarrage réel) ---
+  const [invoicingStatus, setInvoicingStatus] = useState<InvoicingStatus | null>(null);
+  const refreshInvoicingStatus = async () => {
+    try {
+      const res = await fetch('/api/invoicing-status');
+      if (res.ok) setInvoicingStatus(await res.json());
+    } catch { /* indisponible : la section reste masquée */ }
+  };
+  useEffect(() => { refreshInvoicingStatus(); }, []);
+
+  const handlePurgeTestInvoices = async (): Promise<boolean> => {
+    if (!(await callApi('/api/invoicing/purge-tests', 'POST', {}))) return false;
+    const invList = await fetch('/api/sales-invoices').then(r => r.json());
+    setInvoices(invList);
+    await refreshInvoicingStatus();
+    return true;
+  };
+
+  const handleStartLiveInvoicing = async (): Promise<boolean> => {
+    if (!(await callApi('/api/invoicing/go-live', 'POST', {}))) return false;
+    await refreshInvoicingStatus();
+    return true;
+  };
+
   const handleSaveCompanySettings = async (settings: CompanySettings) => {
     if (await callApi('/api/company-settings', 'POST', settings)) {
       setCompanySettings(settings);
@@ -674,6 +698,9 @@ export default function App() {
             priceGuide={priceGuide}
             onSavePriceGuideEntry={handleSavePriceGuideEntry}
             onDeletePriceGuideEntry={handleDeletePriceGuideEntry}
+            invoicingStatus={invoicingStatus}
+            onPurgeTestInvoices={handlePurgeTestInvoices}
+            onStartLiveInvoicing={handleStartLiveInvoicing}
           />
         )}
 

@@ -7,7 +7,7 @@ import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SEED_GEMSTONES, SEED_PURCHASES, SEED_LOTS } from './data';
-import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot } from './types';
+import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot, InvoicingStatus } from './types';
 
 export const DB_FILE_PATH = path.join(process.cwd(), 'gemophy.db');
 // Ancienne base JSON (générée par la version AI Studio) : importée puis archivée au premier lancement
@@ -181,6 +181,7 @@ function getConnection(): Database.Database {
   ensureDeletedAtColumns(db);
   ensureSupplierReferenceColumn(db);
   ensureInvoiceSnapshotColumns(db);
+  ensureAppFlagsTable(db);
   bootstrapIfEmpty(db);
 
   // Migration terminologie : 'Consignation' -> 'Confié' (terme du négoce). Idempotent.
@@ -228,6 +229,11 @@ function ensureSupplierReferenceColumn(conn: Database.Database) {
     console.log('[SQLite] Migration : ajout de no_supplier_invoice sur purchases...');
     conn.exec(`ALTER TABLE purchases ADD COLUMN no_supplier_invoice INTEGER NOT NULL DEFAULT 0;`);
   }
+}
+
+// Petits indicateurs de l'application (ex. : la facturation réelle a démarré)
+function ensureAppFlagsTable(conn: Database.Database) {
+  conn.exec('CREATE TABLE IF NOT EXISTS app_flags (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
 }
 
 // Copie figée de l'identité du vendeur et du client à l'émission d'une facture
@@ -1229,6 +1235,33 @@ export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
     }
   });
   run();
+}
+
+export async function getInvoicingStatus(): Promise<InvoicingStatus> {
+  const conn = getConnection();
+  const flag = conn.prepare("SELECT value FROM app_flags WHERE key = 'invoicing_live_since'").get() as { value: string } | undefined;
+  const count = (conn.prepare('SELECT COUNT(*) AS c FROM sales_invoices').get() as { c: number }).c;
+  return { live: !!flag, liveSince: flag?.value, invoiceCount: count };
+}
+
+// Démarre la facturation réelle : la purge des factures de test n'est plus possible
+export async function startLiveInvoicing(): Promise<void> {
+  getConnection()
+    .prepare("INSERT OR IGNORE INTO app_flags (key, value) VALUES ('invoicing_live_since', ?)")
+    .run(new Date().toISOString());
+}
+
+// Supprime définitivement TOUTES les factures (corbeille comprise), tant que la facturation
+// réelle n'a pas démarré. Le stock et le journal des mouvements ne sont pas modifiés.
+export async function purgeTestInvoices(): Promise<{ deleted: number }> {
+  const conn = getConnection();
+  const run = conn.transaction(() => {
+    if ((conn.prepare("SELECT 1 FROM app_flags WHERE key = 'invoicing_live_since'").get())) {
+      throw new InvoiceLockedError("La facturation réelle a démarré : les factures ne peuvent plus être purgées.");
+    }
+    return conn.prepare('DELETE FROM sales_invoices').run().changes;
+  });
+  return { deleted: run() };
 }
 
 export async function deleteSalesInvoice(id: string): Promise<void> {

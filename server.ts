@@ -17,6 +17,7 @@ import {
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
   getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice, InvoiceLockedError,
+  getInvoicingStatus, startLiveInvoicing, purgeTestInvoices,
   getCompanySettings, saveCompanySettings,
   getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
   getTrash, restoreTrashItem,
@@ -302,6 +303,35 @@ app.post('/api/sales-invoices', async (req, res) => {
     if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error saving invoice:", error);
     res.status(500).json({ error: "Erreur d'enregistrement de la facture de vente." });
+  }
+});
+
+app.get('/api/invoicing-status', async (req, res) => {
+  try {
+    res.json(await getInvoicingStatus());
+  } catch (error: any) {
+    console.error("Error reading invoicing status:", error);
+    res.status(500).json({ error: "Erreur de lecture de l'état de la facturation." });
+  }
+});
+
+app.post('/api/invoicing/go-live', async (req, res) => {
+  try {
+    await startLiveInvoicing();
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Error starting live invoicing:", error);
+    res.status(500).json({ error: "Erreur au démarrage de la facturation réelle." });
+  }
+});
+
+app.post('/api/invoicing/purge-tests', async (req, res) => {
+  try {
+    res.json({ success: true, ...(await purgeTestInvoices()) });
+  } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
+    console.error("Error purging test invoices:", error);
+    res.status(500).json({ error: "Erreur de purge des factures de test." });
   }
 });
 
