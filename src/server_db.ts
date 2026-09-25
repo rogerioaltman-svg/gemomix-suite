@@ -182,6 +182,7 @@ function getConnection(): Database.Database {
   ensureSupplierReferenceColumn(db);
   ensureInvoiceSnapshotColumns(db);
   ensureAppFlagsTable(db);
+  ensureInvoiceNumberUniqueIndex(db);
   bootstrapIfEmpty(db);
 
   // Migration terminologie : 'Consignation' -> 'Confié' (terme du négoce). Idempotent.
@@ -234,6 +235,15 @@ function ensureSupplierReferenceColumn(conn: Database.Database) {
 // Petits indicateurs de l'application (ex. : la facturation réelle a démarré)
 function ensureAppFlagsTable(conn: Database.Database) {
   conn.exec('CREATE TABLE IF NOT EXISTS app_flags (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
+}
+
+// Deux factures ne peuvent pas porter le même numéro (les brouillons n'en ont pas)
+function ensureInvoiceNumberUniqueIndex(conn: Database.Database) {
+  try {
+    conn.exec("CREATE UNIQUE INDEX IF NOT EXISTS ux_sales_invoices_number ON sales_invoices(invoice_number) WHERE invoice_number != ''");
+  } catch (e) {
+    console.warn("[SQLite] Index d'unicité des numéros de facture non créé (doublons existants ?) :", e);
+  }
 }
 
 // Copie figée de l'identité du vendeur et du client à l'émission d'une facture
@@ -1196,6 +1206,20 @@ function assertInvoiceUnchanged(existing: SalesInvoice, inv: SalesInvoice): void
   if (!allowedStatus) throw new InvoiceLockedError(LOCKED_INVOICE_MESSAGE);
 }
 
+// Numéro suivant FAC-AAAA-NNNN : suite continue par année, calculée dans la transaction
+// d'émission (better-sqlite3 est synchrone : deux émissions ne peuvent pas se croiser).
+// Toutes les lignes comptent, corbeille comprise, pour ne jamais réattribuer un numéro.
+function nextInvoiceNumber(conn: Database.Database, year: number): string {
+  const prefix = `FAC-${year}-`;
+  const rows = conn.prepare('SELECT invoice_number FROM sales_invoices WHERE invoice_number LIKE ?').all(prefix + '%') as { invoice_number: string }[];
+  let max = 0;
+  for (const r of rows) {
+    const m = /^FAC-\d{4}-(\d+)$/.exec(r.invoice_number);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `${prefix}${String(max + 1).padStart(4, '0')}`;
+}
+
 export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
   const conn = getConnection();
   const run = conn.transaction(() => {
@@ -1216,6 +1240,16 @@ export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
       clientSnapshot = buildClientSnapshot(conn, inv);
       issuedAt = new Date().toISOString();
     }
+    // Le numéro est attribué ici, à l'émission : ce que envoie le navigateur est ignoré.
+    // Un brouillon n'a pas de numéro ; une facture déjà émise garde le sien.
+    let invoiceNumber = inv.invoiceNumber;
+    if (becomesIssued) {
+      const year = Number((inv.date ?? '').slice(0, 4)) || new Date().getFullYear();
+      invoiceNumber = nextInvoiceNumber(conn, year);
+    } else if (inv.status === 'Brouillon') {
+      invoiceNumber = '';
+    }
+    inv = { ...inv, invoiceNumber };
     upsertInvoice(conn, { ...inv, issuedAt, sellerSnapshot, clientSnapshot });
 
     // Marque automatiquement les pierres référencées comme vendues (facture payée ou en attente)
@@ -1441,7 +1475,7 @@ export async function getTrash(): Promise<TrashItem[]> {
     items.push({ type: 'client', id: r.id, label: r.name, detail: 'Client', deletedAt: r.deleted_at });
   });
   (conn.prepare("SELECT * FROM sales_invoices WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
-    items.push({ type: 'salesInvoice', id: r.id, label: `Facture ${r.invoice_number}`, detail: `${r.client_name ?? ''} · ${r.total_incl_tax} €`, deletedAt: r.deleted_at });
+    items.push({ type: 'salesInvoice', id: r.id, label: r.invoice_number ? `Facture ${r.invoice_number}` : 'Facture (brouillon)', detail: `${r.client_name ?? ''} · ${r.total_incl_tax} €`, deletedAt: r.deleted_at });
   });
   (conn.prepare("SELECT * FROM price_guide WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
     items.push({ type: 'priceGuideEntry', id: r.id, label: r.tier_name, detail: r.gemstone_type, deletedAt: r.deleted_at });

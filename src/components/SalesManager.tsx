@@ -122,12 +122,8 @@ export default function SalesManager({
   // Suggest/auto-generate invoice number
   useEffect(() => {
     if (viewMode === 'create') {
-      const year = new Date().getFullYear();
-      const count = invoices.length + 1;
-      const suggestedNum = `FAC-${year}-${count.toString().padStart(3, '0')}`;
-      
       setInvoiceForm({
-        invoiceNumber: suggestedNum,
+        invoiceNumber: '',
         clientId: clients[0]?.id || '',
         date: new Date().toISOString().split('T')[0],
         dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -237,14 +233,14 @@ export default function SalesManager({
   // Save the invoice draft
   // emit=false : enregistre un brouillon (modifiable, supprimable) ; emit=true : émet la facture
   const saveInvoice = async (emit: boolean) => {
-    if (!invoiceForm.invoiceNumber || !invoiceForm.clientId || invoiceForm.items.length === 0) return;
+    if (!invoiceForm.clientId || invoiceForm.items.length === 0) return;
 
     const selectedClient = clients.find(c => c.id === invoiceForm.clientId);
     const clientName = selectedClient ? selectedClient.name : 'Client Supprimé/Inconnu';
 
     const draftInvoice: SalesInvoice = {
       id: viewMode === 'edit' && selectedInvoice ? selectedInvoice.id : `INV-${Date.now()}`,
-      invoiceNumber: invoiceForm.invoiceNumber,
+      invoiceNumber: '', // attribué par le serveur à l'émission
       clientId: invoiceForm.clientId,
       clientName: clientName,
       date: invoiceForm.date,
@@ -399,7 +395,7 @@ export default function SalesManager({
                             onClick={() => handleSelectInvoice(inv)}
                             className="text-left text-[#bda165] hover:underline cursor-pointer"
                           >
-                            {inv.invoiceNumber}
+                            {inv.invoiceNumber || 'Brouillon'}
                           </button>
                         </td>
                         <td className="py-3.5 px-4 text-gray-400">
@@ -505,15 +501,10 @@ export default function SalesManager({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">NUMÉRO DE FACTURE *</label>
-                  <input
-                    type="text"
-                    required
-                    value={invoiceForm.invoiceNumber}
-                    onChange={(e) => setInvoiceForm({...invoiceForm, invoiceNumber: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-[#e0b760] font-mono font-bold rounded-lg focus:outline-none"
-                    placeholder="FAC-2026-001"
-                  />
+                  <label className="block text-gray-400 text-[10px] font-mono uppercase mb-1">NUMÉRO DE FACTURE</label>
+                  <div id="invoice-number-info" className="w-full px-3 py-2 bg-[#171e2c]/60 border border-dashed border-[#27354d] text-gray-400 rounded-lg">
+                    Attribué automatiquement à l'émission
+                  </div>
                 </div>
 
                 <div>
@@ -1006,7 +997,7 @@ export default function SalesManager({
                   FACTURE
                 </span>
                 <div className="text-stone-500 text-xs font-sans">
-                  <p>Numéro Facture : <span className="font-mono font-bold text-stone-900 text-sm block">{selectedInvoice.invoiceNumber}</span></p>
+                  <p>Numéro Facture : <span className="font-mono font-bold text-stone-900 text-sm block">{selectedInvoice.invoiceNumber || 'BROUILLON'}</span></p>
                   <p className="mt-1">Date d'édition : <span className="font-bold text-stone-900">{selectedInvoice.date}</span></p>
                   <p>Date d'échéance : <span className="font-bold text-stone-900">{selectedInvoice.dueDate}</span></p>
                 </div>
