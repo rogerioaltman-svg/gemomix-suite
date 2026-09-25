@@ -282,5 +282,9 @@ export interface SalesInvoice {
   issuedAt?: string; // date d'émission (première sortie du brouillon)
   sellerSnapshot?: SellerSnapshot; // absent sur un brouillon et sur les anciennes factures
   clientSnapshot?: ClientSnapshot;
+  // Avoir (facture d'annulation) : montants négatifs, numérotation AV-AAAA-NNNN, rattaché à la
+  // facture d'origine. Toujours créé par le serveur, jamais par une sauvegarde ordinaire.
+  docType?: 'facture' | 'avoir';
+  creditedInvoiceId?: string;
 }
 

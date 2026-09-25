@@ -316,6 +316,18 @@ export default function App() {
     return false;
   };
 
+  // Avoir total sur une facture émise ; restock : remet les pierres en stock
+  const handleCreateCreditNote = async (invoiceId: string, restock: boolean): Promise<boolean> => {
+    if (!(await callApi(`/api/sales-invoices/${invoiceId}/credit-note`, 'POST', { restock }))) return false;
+    const [invList, gemList] = await Promise.all([
+      fetch('/api/sales-invoices').then(r => r.json()),
+      fetch('/api/gemstones').then(r => r.json())
+    ]);
+    setInvoices(invList);
+    setGemstones(Array.isArray(gemList) ? gemList.map(normalizeGemstone) : []);
+    return true;
+  };
+
   const handleDeleteInvoice = (id: string) => {
     setConfirmDialog({
       title: "Purger cette facture",
@@ -675,6 +687,7 @@ export default function App() {
             companySettings={companySettings}
             onSaveInvoice={handleSaveInvoice}
             onDeleteInvoice={handleDeleteInvoice}
+            onCreateCreditNote={handleCreateCreditNote}
             onRefreshGemstones={handleRefreshGemstones}
             onSaveClient={handleSaveClient}
           />

@@ -249,7 +249,8 @@ function ensureInvoiceNumberUniqueIndex(conn: Database.Database) {
 // Copie figée de l'identité du vendeur et du client à l'émission d'une facture
 function ensureInvoiceSnapshotColumns(conn: Database.Database) {
   const cols = (conn.pragma('table_info(sales_invoices)') as any[]).map(c => c.name);
-  for (const col of ['issued_at', 'seller_snapshot', 'client_snapshot']) {
+  // doc_type / credited_invoice_id : avoirs (facture d'annulation) rattachés à leur facture d'origine
+  for (const col of ['issued_at', 'seller_snapshot', 'client_snapshot', 'doc_type', 'credited_invoice_id']) {
     if (!cols.includes(col)) {
       console.log(`[SQLite] Migration : ajout de ${col} sur sales_invoices...`);
       conn.exec(`ALTER TABLE sales_invoices ADD COLUMN ${col} TEXT;`);
@@ -714,7 +715,9 @@ function rowToInvoice(r: any): SalesInvoice {
     notes: r.notes ?? undefined,
     issuedAt: r.issued_at ?? undefined,
     sellerSnapshot: r.seller_snapshot ? JSON.parse(r.seller_snapshot) : undefined,
-    clientSnapshot: r.client_snapshot ? JSON.parse(r.client_snapshot) : undefined
+    clientSnapshot: r.client_snapshot ? JSON.parse(r.client_snapshot) : undefined,
+    docType: r.doc_type === 'avoir' ? 'avoir' : 'facture',
+    creditedInvoiceId: r.credited_invoice_id ?? undefined
   };
 }
 
@@ -723,11 +726,11 @@ function upsertInvoice(conn: Database.Database, inv: SalesInvoice) {
     INSERT OR REPLACE INTO sales_invoices (
       id, invoice_number, date, due_date, client_id, client_name, items,
       discount, total_excl_tax, vat_amount, total_incl_tax, status, payment_method, notes,
-      issued_at, seller_snapshot, client_snapshot
+      issued_at, seller_snapshot, client_snapshot, doc_type, credited_invoice_id
     ) VALUES (
       @id, @invoiceNumber, @date, @dueDate, @clientId, @clientName, @items,
       @discount, @totalExclTax, @vatAmount, @totalInclTax, @status, @paymentMethod, @notes,
-      @issuedAt, @sellerSnapshot, @clientSnapshot
+      @issuedAt, @sellerSnapshot, @clientSnapshot, @docType, @creditedInvoiceId
     )
   `).run({
     id: inv.id,
@@ -746,7 +749,9 @@ function upsertInvoice(conn: Database.Database, inv: SalesInvoice) {
     notes: inv.notes ?? null,
     issuedAt: inv.issuedAt ?? null,
     sellerSnapshot: inv.sellerSnapshot ? JSON.stringify(inv.sellerSnapshot) : null,
-    clientSnapshot: inv.clientSnapshot ? JSON.stringify(inv.clientSnapshot) : null
+    clientSnapshot: inv.clientSnapshot ? JSON.stringify(inv.clientSnapshot) : null,
+    docType: inv.docType === 'avoir' ? 'avoir' : 'facture',
+    creditedInvoiceId: inv.creditedInvoiceId ?? null
   });
 }
 
@@ -1209,12 +1214,12 @@ function assertInvoiceUnchanged(existing: SalesInvoice, inv: SalesInvoice): void
 // Numéro suivant FAC-AAAA-NNNN : suite continue par année, calculée dans la transaction
 // d'émission (better-sqlite3 est synchrone : deux émissions ne peuvent pas se croiser).
 // Toutes les lignes comptent, corbeille comprise, pour ne jamais réattribuer un numéro.
-function nextInvoiceNumber(conn: Database.Database, year: number): string {
-  const prefix = `FAC-${year}-`;
+function nextInvoiceNumber(conn: Database.Database, year: number, kind: 'FAC' | 'AV' = 'FAC'): string {
+  const prefix = `${kind}-${year}-`;
   const rows = conn.prepare('SELECT invoice_number FROM sales_invoices WHERE invoice_number LIKE ?').all(prefix + '%') as { invoice_number: string }[];
   let max = 0;
   for (const r of rows) {
-    const m = /^FAC-\d{4}-(\d+)$/.exec(r.invoice_number);
+    const m = new RegExp('^' + kind + '-\\d{4}-(\\d+)$').exec(r.invoice_number);
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
   return `${prefix}${String(max + 1).padStart(4, '0')}`;
@@ -1249,7 +1254,8 @@ export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
     } else if (inv.status === 'Brouillon') {
       invoiceNumber = '';
     }
-    inv = { ...inv, invoiceNumber };
+    // Un avoir n'est créé que par createCreditNote : une sauvegarde ordinaire garde le type déjà enregistré
+    inv = { ...inv, invoiceNumber, docType: (row as any)?.doc_type === 'avoir' ? 'avoir' : 'facture', creditedInvoiceId: (row as any)?.credited_invoice_id ?? undefined };
     upsertInvoice(conn, { ...inv, issuedAt, sellerSnapshot, clientSnapshot });
 
     // Marque automatiquement les pierres référencées comme vendues (facture payée ou en attente)
@@ -1269,6 +1275,71 @@ export async function saveSalesInvoice(inv: SalesInvoice): Promise<void> {
     }
   });
   run();
+}
+
+// Avoir total sur une facture émise : nouveau document numéroté AV-AAAA-NNNN (montants négatifs,
+// même vendeur et même client que la facture d'origine), la facture d'origine passe à « Annulée ».
+// restock : remet en stock les pierres vendues par cette facture (mouvement AJUSTEMENT), sauf si
+// une autre facture active les a vendues entre-temps.
+export async function createCreditNote(invoiceId: string, restock: boolean): Promise<SalesInvoice> {
+  const conn = getConnection();
+  const run = conn.transaction(() => {
+    const row = conn.prepare('SELECT * FROM sales_invoices WHERE id = ? AND deleted_at IS NULL').get(invoiceId);
+    if (!row) throw new InvoiceLockedError('Facture introuvable.');
+    const orig = rowToInvoice(row);
+    if (orig.docType === 'avoir') throw new InvoiceLockedError("Un avoir ne peut pas être annulé par un autre avoir.");
+    if (orig.status !== 'En attente' && orig.status !== 'Payée') {
+      throw new InvoiceLockedError("Seule une facture émise (en attente ou payée) peut faire l'objet d'un avoir.");
+    }
+    if (conn.prepare('SELECT 1 FROM sales_invoices WHERE credited_invoice_id = ?').get(orig.id)) {
+      throw new InvoiceLockedError('Cette facture a déjà fait l\'objet d\'un avoir.');
+    }
+
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const number = nextInvoiceNumber(conn, now.getFullYear(), 'AV');
+    const credit: SalesInvoice = {
+      id: `AV-${now.getTime()}`,
+      invoiceNumber: number,
+      date: today,
+      dueDate: today,
+      clientId: orig.clientId,
+      clientName: orig.clientName,
+      items: (orig.items ?? []).map(i => ({ ...i, id: `${i.id}-av`, unitPrice: -i.unitPrice, totalAmount: -i.totalAmount })),
+      discount: -(orig.discount ?? 0),
+      totalExclTax: -orig.totalExclTax,
+      vatAmount: -orig.vatAmount,
+      totalInclTax: -orig.totalInclTax,
+      status: 'Payée', // document soldé : le remboursement éventuel se traite hors de ce module
+      paymentMethod: orig.paymentMethod,
+      notes: `Avoir sur la facture ${orig.invoiceNumber} du ${orig.date}.`,
+      issuedAt: now.toISOString(),
+      sellerSnapshot: orig.sellerSnapshot ?? buildSellerSnapshot(conn),
+      clientSnapshot: orig.clientSnapshot ?? buildClientSnapshot(conn, orig),
+      docType: 'avoir',
+      creditedInvoiceId: orig.id
+    };
+    upsertInvoice(conn, credit);
+    conn.prepare("UPDATE sales_invoices SET status = 'Annulée' WHERE id = ?").run(orig.id);
+
+    if (restock) {
+      const others = (conn.prepare("SELECT id, items FROM sales_invoices WHERE deleted_at IS NULL AND id != ? AND status IN ('En attente', 'Payée') AND COALESCE(doc_type, 'facture') = 'facture'").all(orig.id) as { id: string; items: string }[])
+        .flatMap(r => JSON.parse(r.items || '[]') as { gemstoneId?: string }[])
+        .map(i => i.gemstoneId)
+        .filter(Boolean);
+      const getGem = conn.prepare('SELECT reference, status FROM gemstones WHERE id = ?');
+      const setAvailable = conn.prepare("UPDATE gemstones SET status = 'Disponible' WHERE id = ?");
+      for (const item of orig.items ?? []) {
+        if (!item.gemstoneId || others.includes(item.gemstoneId)) continue;
+        const gem = getGem.get(item.gemstoneId) as { reference: string; status: string } | undefined;
+        if (!gem || gem.status !== 'Vendu') continue;
+        setAvailable.run(item.gemstoneId);
+        logMovement(conn, 'AJUSTEMENT', 'gemstone', item.gemstoneId, gem.reference, item.weight, item.totalAmount, `Avoir ${number} — annulation de la facture ${orig.invoiceNumber}`);
+      }
+    }
+    return credit;
+  });
+  return run();
 }
 
 export async function getInvoicingStatus(): Promise<InvoicingStatus> {

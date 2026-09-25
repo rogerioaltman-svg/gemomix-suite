@@ -31,6 +31,7 @@ interface SalesManagerProps {
   companySettings?: CompanySettings | null;
   onSaveInvoice: (inv: SalesInvoice) => Promise<boolean>;
   onDeleteInvoice: (id: string) => Promise<void> | void;
+  onCreateCreditNote: (invoiceId: string, restock: boolean) => Promise<boolean>;
   onRefreshGemstones: () => Promise<void> | void; // to reload status changes
   onSaveClient: (c: Client) => Promise<boolean | void> | boolean | void;
 }
@@ -42,6 +43,7 @@ export default function SalesManager({
   companySettings,
   onSaveInvoice,
   onDeleteInvoice,
+  onCreateCreditNote,
   onRefreshGemstones,
   onSaveClient
 }: SalesManagerProps) {
@@ -51,6 +53,9 @@ export default function SalesManager({
   // Confirmations affichées à l'endroit du clic (pas de fenêtre du navigateur)
   const [confirmPaidId, setConfirmPaidId] = useState<string | null>(null);
   const [confirmEmit, setConfirmEmit] = useState(false);
+  const [confirmCreditNote, setConfirmCreditNote] = useState(false);
+  const [restockOnCredit, setRestockOnCredit] = useState(true);
+  const [pendingCreditOf, setPendingCreditOf] = useState<string | null>(null); // avoir en cours de création : on l'ouvre dès qu'il apparaît
 
   // Création d'un client sans quitter la facturation : même fenêtre que « Tiers & CSV »
   const [isQuickClientModalOpen, setIsQuickClientModalOpen] = useState(false);
@@ -75,6 +80,12 @@ export default function SalesManager({
   // Référence lisible de la pierre vendue (et non son identifiant interne)
   const gemstoneRef = (id?: string) => (id ? gemstones.find(g => g.id === id)?.reference : undefined);
   const sellerFooterLine = [seller?.name, sellerLegalIds].filter(Boolean).join(' · ');
+
+  // Avoir : document lié à sa facture d'origine ; une facture annulée pointe vers son avoir
+  const isCredit = selectedInvoice?.docType === 'avoir';
+  const originalOfCredit = isCredit ? invoices.find(i => i.id === selectedInvoice?.creditedInvoiceId) : undefined;
+  const creditOfInvoice = selectedInvoice ? invoices.find(i => i.creditedInvoiceId === selectedInvoice.id) : undefined;
+  const hasLinkedStones = !!selectedInvoice?.items.some(i => i.gemstoneId);
 
   // Available (Disponible) gemstones for invoicing
   const availableGemstones = gemstones.filter(g => g.status === 'Disponible');
@@ -268,14 +279,28 @@ export default function SalesManager({
     if (invoiceForm.items.length > 0) setConfirmEmit(true);
   };
 
-  useEffect(() => { setConfirmEmit(false); setConfirmPaidId(null); }, [viewMode]);
+  useEffect(() => { setConfirmEmit(false); setConfirmPaidId(null); setConfirmCreditNote(false); }, [viewMode]);
+  useEffect(() => { setConfirmCreditNote(false); }, [selectedInvoice?.id]);
 
   // La facture affichée suit la liste rechargée (règlement, copie figée...)
+  // Après la création d'un avoir, on l'affiche dès que la liste rechargée le contient
   useEffect(() => {
+    if (pendingCreditOf) {
+      const credit = invoices.find(i => i.creditedInvoiceId === pendingCreditOf);
+      if (credit) { setSelectedInvoice(credit); setPendingCreditOf(null); return; }
+    }
     if (!selectedInvoice) return;
     const fresh = invoices.find(i => i.id === selectedInvoice.id);
     if (fresh && fresh !== selectedInvoice) setSelectedInvoice(fresh);
-  }, [invoices]);
+  }, [invoices, pendingCreditOf]);
+
+  const handleCreateCreditNote = async () => {
+    if (!selectedInvoice) return;
+    const id = selectedInvoice.id;
+    const ok = await onCreateCreditNote(id, hasLinkedStones && restockOnCredit);
+    setConfirmCreditNote(false);
+    if (ok) setPendingCreditOf(id);
+  };
 
   // Facture émise : seul le règlement peut encore évoluer (En attente → Payée)
   const handleMarkPaid = async (inv: SalesInvoice) => {
@@ -397,6 +422,9 @@ export default function SalesManager({
                           >
                             {inv.invoiceNumber || 'Brouillon'}
                           </button>
+                          {inv.docType === 'avoir' && inv.creditedInvoiceId && (
+                            <span className="block text-[9px] font-sans font-normal text-gray-500">sur {invoices.find(i => i.id === inv.creditedInvoiceId)?.invoiceNumber ?? 'facture supprimée'}</span>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-gray-400">
                           {inv.date}
@@ -415,12 +443,13 @@ export default function SalesManager({
                         </td>
                         <td className="py-3.5 px-4">
                           <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold border ${
+                            inv.docType === 'avoir' ? 'bg-violet-500/10 text-violet-300 border-violet-500/20' :
                             inv.status === 'Payée' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/15' :
                             inv.status === 'En attente' ? 'bg-amber-500/10 text-amber-400 border-amber-500/15' :
                             inv.status === 'Annulée' ? 'bg-red-500/10 text-red-500 border-red-500/15' :
                             'bg-gray-500/10 text-gray-300 border-gray-500/15'
                           }`}>
-                            {inv.status}
+                            {inv.docType === 'avoir' ? 'Avoir' : inv.status}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
@@ -918,6 +947,15 @@ export default function SalesManager({
                   <span>Modifier le brouillon</span>
                 </button>
               )}
+              {!isCredit && (selectedInvoice.status === 'En attente' || selectedInvoice.status === 'Payée') && !confirmCreditNote && (
+                <button
+                  id="btn-open-credit-note"
+                  onClick={() => setConfirmCreditNote(true)}
+                  className="px-3.5 py-1.5 text-xs bg-[#171e2c] border border-violet-500/30 text-violet-300 hover:bg-violet-500/10 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Émettre un avoir</span>
+                </button>
+              )}
               {selectedInvoice.status === 'En attente' && (confirmPaidId === selectedInvoice.id ? (
                 <div className="flex items-center gap-2 text-xs text-emerald-400">
                   <span>Paiement de {formatCurrency(selectedInvoice.totalInclTax)} € encaissé ?</span>
@@ -954,6 +992,49 @@ export default function SalesManager({
               </button>
             </div>
           </div>
+
+          {confirmCreditNote && (
+            <div id="credit-note-confirm" className="no-print max-w-4xl mx-auto rounded-lg border border-violet-500/30 bg-violet-500/10 p-4 space-y-3 text-xs">
+              <p className="text-violet-200 leading-relaxed">
+                Émettre un avoir de {formatCurrency(selectedInvoice.totalInclTax)} € TTC qui annule la facture {selectedInvoice.invoiceNumber} ?
+                La facture passera à « Annulée ». Un avoir est définitif : il ne peut ni être modifié ni supprimé.
+              </p>
+              {hasLinkedStones && (
+                <label className="flex items-center gap-2 text-gray-200 cursor-pointer">
+                  <input
+                    id="credit-restock-checkbox"
+                    type="checkbox"
+                    checked={restockOnCredit}
+                    onChange={(e) => setRestockOnCredit(e.target.checked)}
+                  />
+                  <span>Remettre en stock les pierres de cette facture (décochez si elles ne sont pas revenues)</span>
+                </label>
+              )}
+              <div className="flex gap-2">
+                <button
+                  id="btn-confirm-credit-note"
+                  onClick={handleCreateCreditNote}
+                  className="px-3.5 py-1.5 font-semibold bg-violet-500/20 border border-violet-500/40 text-violet-100 hover:bg-violet-500/30 rounded-lg cursor-pointer"
+                >
+                  Confirmer l'avoir
+                </button>
+                <button
+                  onClick={() => setConfirmCreditNote(false)}
+                  className="px-3.5 py-1.5 bg-[#171e2c] border border-gray-800 text-gray-400 hover:text-white rounded-lg cursor-pointer"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          )}
+
+          {creditOfInvoice && (
+            <div id="invoice-credited-notice" className="no-print max-w-4xl mx-auto text-[11px] rounded-lg px-3 py-2 border bg-violet-500/10 border-violet-500/25 text-violet-300">
+              Facture annulée par l'avoir{' '}
+              <button onClick={() => setSelectedInvoice(creditOfInvoice)} className="font-mono font-bold underline cursor-pointer">{creditOfInvoice.invoiceNumber}</button>
+              {' '}du {creditOfInvoice.date}.
+            </div>
+          )}
 
           {/* État de la copie figée (jamais imprimé) */}
           {selectedInvoice.sellerSnapshot ? (
@@ -994,12 +1075,16 @@ export default function SalesManager({
 
               <div className="text-right sm:text-right w-full sm:w-auto">
                 <span className="inline-block bg-gray-100 text-gray-900 border border-gray-300 font-mono text-[9px] px-3 py-1 font-bold rounded mb-4 uppercase tracking-wider print:bg-transparent print:border-black">
-                  FACTURE
+                  {isCredit ? 'AVOIR' : 'FACTURE'}
                 </span>
                 <div className="text-stone-500 text-xs font-sans">
-                  <p>Numéro Facture : <span className="font-mono font-bold text-stone-900 text-sm block">{selectedInvoice.invoiceNumber || 'BROUILLON'}</span></p>
+                  <p>Numéro {isCredit ? 'Avoir' : 'Facture'} : <span className="font-mono font-bold text-stone-900 text-sm block">{selectedInvoice.invoiceNumber || 'BROUILLON'}</span></p>
                   <p className="mt-1">Date d'édition : <span className="font-bold text-stone-900">{selectedInvoice.date}</span></p>
-                  <p>Date d'échéance : <span className="font-bold text-stone-900">{selectedInvoice.dueDate}</span></p>
+                  {isCredit ? (
+                    <p>Sur la facture n° <span className="font-bold text-stone-900">{originalOfCredit?.invoiceNumber ?? '—'}</span>{originalOfCredit ? ` du ${originalOfCredit.date}` : ''}</p>
+                  ) : (
+                    <p>Date d'échéance : <span className="font-bold text-stone-900">{selectedInvoice.dueDate}</span></p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1007,7 +1092,7 @@ export default function SalesManager({
             {/* Billed To block */}
             <div className="py-8 text-xs font-sans border-b border-stone-200">
               <div className="bg-stone-50 p-4 border border-stone-200 rounded-xl relative w-full sm:w-1/2">
-                <span className="block font-mono text-[9px] uppercase tracking-wider text-[#8a733e] font-extrabold mb-1.5">FACTURÉ À</span>
+                <span className="block font-mono text-[9px] uppercase tracking-wider text-[#8a733e] font-extrabold mb-1.5">{isCredit ? 'AVOIR ÉMIS À' : 'FACTURÉ À'}</span>
                 {(selectedInvoice.clientSnapshot ?? clients.find(c => c.id === selectedInvoice.clientId)) ? (
                   (() => {
                     const c: ClientSnapshot | Client = (selectedInvoice.clientSnapshot ?? clients.find(x => x.id === selectedInvoice.clientId))!;
@@ -1086,10 +1171,10 @@ export default function SalesManager({
                     <span>{formatCurrency(selectedInvoice.totalExclTax + selectedInvoice.discount)} €</span>
                   </div>
 
-                  {selectedInvoice.discount > 0 && (
+                  {selectedInvoice.discount !== 0 && (
                     <div className="flex justify-between text-stone-500 text-[11px]">
                       <span>Remise accordée :</span>
-                      <span className="text-red-600 font-bold">-{formatCurrency(selectedInvoice.discount)} €</span>
+                      <span className="text-red-600 font-bold">{formatCurrency(-selectedInvoice.discount)} €</span>
                     </div>
                   )}
 
@@ -1104,7 +1189,7 @@ export default function SalesManager({
                   </div>
 
                   <div className="flex justify-between items-center bg-gray-100 print:bg-transparent print:border-black text-gray-900 p-3.5 rounded-lg border border-gray-300 text-sans">
-                    <span className="text-xs font-bold leading-none font-sans">NET À PAYER TTC :</span>
+                    <span className="text-xs font-bold leading-none font-sans">{isCredit ? 'MONTANT DE L\'AVOIR TTC :' : 'NET À PAYER TTC :'}</span>
                     <span className="text-lg font-black font-mono leading-none">{formatCurrency(selectedInvoice.totalInclTax)} €</span>
                   </div>
 
@@ -1114,10 +1199,12 @@ export default function SalesManager({
 
             {/* Pied de page : mentions légales de paiement et identité du vendeur */}
             <div className="mt-16 pt-6 border-t border-stone-200 space-y-1.5 text-[9px] text-stone-500 leading-relaxed font-sans">
+              {!isCredit && (
               <p>
                 Pénalités de retard : trois fois le taux d'intérêt légal, exigibles sans rappel. Indemnité forfaitaire
                 pour frais de recouvrement en cas de retard de paiement : 40 €. Escompte pour paiement anticipé : néant.
               </p>
+              )}
               {sellerFooterLine && (
                 <p className="font-mono uppercase tracking-wider text-stone-400">{sellerFooterLine}</p>
               )}

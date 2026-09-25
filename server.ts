@@ -17,7 +17,7 @@ import {
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
   getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice, InvoiceLockedError,
-  getInvoicingStatus, startLiveInvoicing, purgeTestInvoices,
+  getInvoicingStatus, startLiveInvoicing, purgeTestInvoices, createCreditNote,
   getCompanySettings, saveCompanySettings,
   getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
   getTrash, restoreTrashItem,
@@ -303,6 +303,17 @@ app.post('/api/sales-invoices', async (req, res) => {
     if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error saving invoice:", error);
     res.status(500).json({ error: "Erreur d'enregistrement de la facture de vente." });
+  }
+});
+
+app.post('/api/sales-invoices/:id/credit-note', async (req, res) => {
+  try {
+    const credit = await createCreditNote(req.params.id, req.body?.restock === true);
+    res.json({ success: true, creditNote: credit });
+  } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
+    console.error("Error creating credit note:", error);
+    res.status(500).json({ error: "Erreur de création de l'avoir." });
   }
 });
 
