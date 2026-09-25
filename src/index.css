@@ -529,3 +529,14 @@ body:has(.light-theme) {
 .light-theme .bg-\[\#0f121a\] * {
   color: inherit;
 }
+
+/* Fiche d'une pierre vendue : les champs verrouillés doivent se voir au premier coup d'œil */
+form[data-sold-locked] input:disabled,
+form[data-sold-locked] select:disabled {
+  opacity: 1;
+  background-color: transparent !important;
+  border-style: dashed !important;
+  color: #7d8794 !important;
+  -webkit-text-fill-color: #7d8794;
+  cursor: not-allowed;
+}

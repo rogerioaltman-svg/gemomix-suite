@@ -454,7 +454,16 @@ export default function InventoryManager({
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="p-6 space-y-6">
+      <form onSubmit={handleSubmit} data-sold-locked={soldLocked ? 'true' : undefined} className="p-6 space-y-6">
+        {soldLocked && (
+          <div id="gem-locked-banner" className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-300 leading-relaxed">
+            <Lock className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              <strong>Pierre vendue : fiche verrouillée.</strong> Seuls la description, l'emplacement et la photo se modifient.
+              Pour corriger une autre donnée, utilisez « Corriger une donnée » sous le statut.
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column : General & 4Cs */}
           <div className="space-y-4 lg:col-span-2">
@@ -892,7 +901,8 @@ export default function InventoryManager({
                               key={btn.label}
                               type="button"
                               onClick={() => setSellingPrice(btn.value)}
-                              className="px-1.5 py-0.5 text-[9px] font-bold bg-[#1f283b] hover:bg-[#bda165] hover:text-black text-gray-300 rounded transition-colors"
+                              disabled={soldLocked}
+                              className="px-1.5 py-0.5 text-[9px] font-bold bg-[#1f283b] hover:bg-[#bda165] hover:text-black text-gray-300 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                               {btn.label}
                             </button>
@@ -966,8 +976,9 @@ export default function InventoryManager({
                     type="button"
                     id="gem-new-supplier-button"
                     onClick={() => setIsSupplierModalOpen(true)}
-                    title="Nouveau fournisseur"
-                    className="shrink-0 px-3 py-2 bg-[#171e2c] hover:bg-[#1f283d] border border-[#27354d] text-[#bda165] rounded-lg transition-colors"
+                    disabled={soldLocked}
+                    title={soldLocked ? 'Pierre vendue : le fournisseur ne peut plus être changé' : 'Nouveau fournisseur'}
+                    className="shrink-0 px-3 py-2 bg-[#171e2c] hover:bg-[#1f283d] border border-[#27354d] text-[#bda165] rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <UserPlus className="h-4 w-4" />
                   </button>
