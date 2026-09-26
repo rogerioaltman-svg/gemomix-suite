@@ -5,7 +5,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
-import { Purchase, PurchaseArticle, Lot, Supplier, Gemstone } from '../types';
+import { Purchase, PurchaseArticle, PurchaseDocument, Lot, Supplier, Gemstone } from '../types';
 import PhotoCapture from './PhotoCapture';
 import LotThumbnail from './LotThumbnail';
 import SupplierFormModal from './SupplierFormModal';
@@ -32,6 +32,7 @@ import {
   Check,
   Pencil,
   Lock,
+  Paperclip,
   History, UserPlus } from 'lucide-react';
 
 interface PurchaseManagerProps {
@@ -135,6 +136,10 @@ export default function PurchaseManager({
     setSupplierRef(p.supplierReference || '');
     setNoSupplierInvoice(!!p.noSupplierInvoice);
     setTempArticles(p.articles || []);
+    setPurchaseDocs(p.documents ?? []);
+    setActiveDocId(p.documents?.[0]?.id ?? null);
+    setShowDocPreview(true);
+    setDocError('');
     setIsAddingPurchase(true);
   };
 
@@ -171,6 +176,66 @@ export default function PurchaseManager({
   const [supplierRef, setSupplierRef] = useState('');
   const [noSupplierInvoice, setNoSupplierInvoice] = useState(false);
   const [tempArticles, setTempArticles] = useState<Omit<PurchaseArticle, 'id'>[]>([]);
+  // Documents joints à l'achat (facture fournisseur en PDF ou scan) et aperçu à côté du formulaire
+  const [purchaseDocs, setPurchaseDocs] = useState<PurchaseDocument[]>([]);
+  const [activeDocId, setActiveDocId] = useState<string | null>(null);
+  const [showDocPreview, setShowDocPreview] = useState(true);
+  const [docError, setDocError] = useState('');
+  const [docUploading, setDocUploading] = useState(false);
+  const activeDoc = purchaseDocs.find(d => d.id === activeDocId) ?? purchaseDocs[0];
+
+  const readAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+
+  const handleDocFiles = async (files: FileList | File[] | null) => {
+    if (!files || files.length === 0) return;
+    setDocError('');
+    setDocUploading(true);
+    const messages: string[] = [];
+    for (const file of Array.from(files)) {
+      if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type)) { messages.push(`${file.name} : format non accepté (PDF, JPEG ou PNG).`); continue; }
+      if (file.size > 15 * 1024 * 1024) { messages.push(`${file.name} : plus de 15 Mo.`); continue; }
+      try {
+        const res = await fetch('/api/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: file.name, mime: file.type, data: await readAsDataUrl(file) })
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { messages.push(`${file.name} : ${body.error || 'envoi refusé'}`); continue; }
+        const doc: PurchaseDocument = body;
+        if (doc.duplicateOfPurchase) messages.push(`Attention : ${file.name} est déjà rattaché à l'achat ${doc.duplicateOfPurchase}.`);
+        setPurchaseDocs(prev => [...prev, doc]);
+        setActiveDocId(doc.id);
+        setShowDocPreview(true);
+      } catch {
+        messages.push(`${file.name} : le serveur est injoignable.`);
+      }
+    }
+    setDocUploading(false);
+    setDocError(messages.join(' '));
+  };
+
+  // Un document déjà rattaché à un achat est archivé : seul un envoi encore libre peut être retiré
+  const handleRemoveDoc = async (doc: PurchaseDocument) => {
+    if (doc.purchaseId) return;
+    try { await fetch(`/api/documents/${doc.id}`, { method: 'DELETE' }); } catch { /* le fichier libre sera ignoré */ }
+    setPurchaseDocs(prev => prev.filter(d => d.id !== doc.id));
+    if (activeDocId === doc.id) setActiveDocId(null);
+  };
+
+  // Fermeture sans enregistrer : les envois libres (jamais rattachés) sont retirés
+  const discardUnlinkedDocs = () => {
+    purchaseDocs.filter(d => !d.purchaseId).forEach(d => { fetch(`/api/documents/${d.id}`, { method: 'DELETE' }).catch(() => {}); });
+    setPurchaseDocs([]);
+    setActiveDocId(null);
+    setDocError('');
+  };
+
   // Ligne du bordereau en cours de modification (null = on ajoute une nouvelle ligne)
   const [editingArtIdx, setEditingArtIdx] = useState<number | null>(null);
 
@@ -343,7 +408,8 @@ export default function PurchaseManager({
         ...art,
         id: art.id ? art.id : `pa-${Date.now()}-${i}`
       })),
-      notes: pNotes.trim()
+      notes: pNotes.trim(),
+      documentIds: purchaseDocs.map(d => d.id)
     };
 
     // En cas d'échec côté serveur, la saisie est conservée pour pouvoir réessayer
@@ -358,6 +424,9 @@ export default function PurchaseManager({
     setPNotes('');
     setTempArticles([]);
     setEditingArtIdx(null);
+    setPurchaseDocs([]);
+    setActiveDocId(null);
+    setDocError('');
     setIsAddingPurchase(false);
     setEditingPurchaseId(null);
     setFormErrors({});
@@ -962,6 +1031,33 @@ export default function PurchaseManager({
 
       {/* 2. ADD NEW PURCHASE FORM MODE */}
       {isAddingPurchase && (
+        <div className={activeDoc && showDocPreview ? 'grid grid-cols-1 xl:grid-cols-2 gap-4 items-start' : ''}>
+        {activeDoc && showDocPreview && (
+          <div id="doc-preview-panel" className="bg-[#121620] border border-[#212a3d] rounded-xl p-3 space-y-2 xl:sticky xl:top-4">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-gray-200 truncate" title={activeDoc.name}>📄 {activeDoc.name}</span>
+              <div className="flex items-center gap-3 shrink-0">
+                <a href={`/api/documents/${activeDoc.id}/file`} target="_blank" rel="noreferrer" className="text-[#e0b760] hover:underline">Ouvrir dans un onglet</a>
+                <button type="button" id="btn-hide-doc-preview" onClick={() => setShowDocPreview(false)} className="text-gray-400 hover:text-white">Masquer</button>
+              </div>
+            </div>
+            {purchaseDocs.length > 1 && (
+              <div className="flex flex-wrap gap-1.5">
+                {purchaseDocs.map(d => (
+                  <button key={d.id} type="button" onClick={() => setActiveDocId(d.id)}
+                    className={`px-2 py-0.5 rounded border text-[10px] truncate max-w-[10rem] ${d.id === activeDoc.id ? 'border-[#b4985c] text-[#eedfa7]' : 'border-gray-700 text-gray-400'}`}>
+                    {d.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {activeDoc.mime === 'application/pdf' ? (
+              <iframe title="Aperçu de la facture" src={`/api/documents/${activeDoc.id}/file`} className="w-full h-[70vh] xl:h-[calc(100vh-9rem)] rounded bg-white" />
+            ) : (
+              <img alt="Aperçu de la facture" src={`/api/documents/${activeDoc.id}/file`} className="w-full max-h-[80vh] object-contain rounded bg-white" />
+            )}
+          </div>
+        )}
         <form onSubmit={handleSaveFullPurchase} className="bg-[#121620] border border-[#212a3d] rounded-xl p-6 space-y-6" id="add-purchase-form">
           <div className="border-b border-gray-800 pb-4 flex justify-between items-center bg-[#171d2b] -mx-6 -mt-6 p-6 rounded-t-xl mb-4">
             <div>
@@ -989,6 +1085,7 @@ export default function PurchaseManager({
                 setPNotes('');
                 setTempArticles([]);
                 setEditingArtIdx(null);
+                discardUnlinkedDocs();
                 setFormErrors({});
               }}
               className="text-xs font-mono font-bold text-gray-400 hover:text-white bg-gray-800 px-3 py-1.5 rounded transition-all"
@@ -1097,6 +1194,49 @@ export default function PurchaseManager({
                 Achat sans facture fournisseur
               </label>
             </div>
+          </div>
+
+          <div
+            id="pur-documents"
+            className="space-y-2 text-xs rounded-lg border border-dashed border-[#27354d] p-3"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); handleDocFiles(e.dataTransfer.files); }}
+          >
+            <label className="block text-gray-400 font-mono uppercase">Facture du fournisseur (PDF ou scan)</label>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="px-3 py-1.5 rounded border border-[#2c3a55] bg-[#1a2336] hover:bg-[#202c44] text-gray-200 cursor-pointer flex items-center gap-1.5">
+                <Paperclip className="h-3.5 w-3.5 text-[#e0b760]" />
+                <span>Joindre un document</span>
+                <input
+                  id="pur-doc-input"
+                  type="file"
+                  accept="application/pdf,image/jpeg,image/png"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => { handleDocFiles(e.target.files); e.target.value = ''; }}
+                />
+              </label>
+              <span className="text-gray-500">ou déposez le fichier ici (PDF, JPEG, PNG — 15 Mo max)</span>
+              {docUploading && <span className="text-amber-400">Envoi en cours…</span>}
+              {purchaseDocs.length > 0 && !showDocPreview && (
+                <button type="button" id="btn-show-doc-preview" onClick={() => setShowDocPreview(true)} className="text-[#e0b760] hover:underline">Afficher l'aperçu</button>
+              )}
+            </div>
+            {purchaseDocs.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {purchaseDocs.map(d => (
+                  <span key={d.id} className="inline-flex items-center gap-1.5 px-2 py-1 rounded border border-gray-700 bg-black/30 text-gray-300">
+                    {d.purchaseId ? <Lock className="h-3 w-3 text-gray-500" title="Archivé : ne peut plus être supprimé" /> : <FileText className="h-3 w-3 text-gray-500" />}
+                    <button type="button" onClick={() => { setActiveDocId(d.id); setShowDocPreview(true); }} className="max-w-[16rem] truncate hover:text-white" title={d.name}>{d.name}</button>
+                    <span className="text-gray-500">{(d.size / 1024).toFixed(0)} Ko</span>
+                    {!d.purchaseId && (
+                      <button type="button" id={`btn-remove-doc-${d.id}`} onClick={() => handleRemoveDoc(d)} className="text-red-400 hover:text-red-300" title="Retirer ce document">×</button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+            {docError && <p id="pur-doc-error" role="alert" className="text-amber-400 leading-snug">{docError}</p>}
           </div>
 
           <div className="space-y-1 text-xs">
@@ -1373,6 +1513,7 @@ export default function PurchaseManager({
                 setPNotes('');
                 setTempArticles([]);
                 setEditingArtIdx(null);
+                discardUnlinkedDocs();
                 setFormErrors({});
               }}
               className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 rounded-lg text-xs font-semibold"
@@ -1389,6 +1530,7 @@ export default function PurchaseManager({
             </button>
           </div>
         </form>
+        </div>
       )}
 
       {/* 3. PURCHASES GENERAL VIEW TAB */}
@@ -1436,6 +1578,11 @@ export default function PurchaseManager({
                           <Calendar className="h-3 w-3" />
                           {purchase.date}
                         </span>
+                        {(purchase.documents?.length ?? 0) > 0 && (
+                          <span className="text-xs text-emerald-400 flex items-center gap-1" title="Facture fournisseur archivée">
+                            <Paperclip className="h-3 w-3" />{purchase.documents!.length}
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-3 font-mono">

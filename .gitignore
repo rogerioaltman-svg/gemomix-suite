@@ -17,3 +17,6 @@ metadata.json
 
 # Import Access : fichiers d'export contenant des données commerciales
 scripts/import-access/out/
+
+# Documents joints aux achats (factures fournisseurs) : données de l utilisateur
+documents/

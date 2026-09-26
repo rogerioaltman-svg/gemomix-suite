@@ -115,6 +115,19 @@ export interface PurchaseArticle {
   entryMode?: 'stock' | 'tri'; // 'stock' = pierre unique entrée directement à l'inventaire ; 'tri' (défaut) = colis à trier en lots
 }
 
+// Document joint à un achat (facture fournisseur en PDF ou scan) : archivé tel quel sur disque,
+// avec son empreinte SHA-256, et jamais supprimé une fois rattaché à un achat.
+export interface PurchaseDocument {
+  id: string;
+  purchaseId?: string; // absent tant que l'achat n'est pas enregistré
+  name: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  createdAt: string;
+  duplicateOfPurchase?: string; // (réponse d'envoi) référence de l'achat qui porte déjà exactement ce fichier
+}
+
 export interface Purchase {
   id: string;
   reference: string; // numéro interne séquentiel (verrouillé) — racine des refs lots/pierres
@@ -126,6 +139,8 @@ export interface Purchase {
   totalCost: number;
   articles: PurchaseArticle[];
   notes?: string;
+  documents?: PurchaseDocument[]; // documents archivés (en lecture)
+  documentIds?: string[]; // documents à rattacher à l'enregistrement (en écriture)
 }
 
 export interface Lot {

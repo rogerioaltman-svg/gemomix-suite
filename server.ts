@@ -18,6 +18,7 @@ import {
   getAllClients, saveClient, deleteClient,
   getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice, InvoiceLockedError,
   getInvoicingStatus, startLiveInvoicing, purgeTestData, createCreditNote, correctSoldGemstone,
+  saveDocument, getDocumentFile, deleteOrphanDocument, DocumentError,
   getCompanySettings, saveCompanySettings,
   getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
   getTrash, restoreTrashItem,
@@ -139,6 +140,44 @@ app.get('/api/purchases', async (req, res) => {
   } catch (error: any) {
     console.error("Error fetching purchases:", error);
     res.status(500).json({ error: "Erreur lors de l'acquisition des factures d'achat." });
+  }
+});
+
+// --- Documents joints aux achats (facture fournisseur PDF / scan) ---
+app.post('/api/documents', async (req, res) => {
+  try {
+    res.json(await saveDocument(req.body ?? {}));
+  } catch (error: any) {
+    if (error instanceof DocumentError) return res.status(400).json({ error: error.message });
+    console.error("Error saving document:", error);
+    res.status(500).json({ error: "Erreur d'enregistrement du document." });
+  }
+});
+
+app.get('/api/documents/:id/file', async (req, res) => {
+  try {
+    const found = await getDocumentFile(req.params.id);
+    if (!found || !fs.existsSync(found.filePath)) return res.status(404).json({ error: 'Document introuvable.' });
+    // type imposé par la base (jamais deviné par le navigateur) ; affichage dans la page, pas de téléchargement forcé
+    res.setHeader('Content-Type', found.doc.mime);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(found.doc.name)}`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    fs.createReadStream(found.filePath).pipe(res);
+  } catch (error: any) {
+    console.error("Error reading document:", error);
+    res.status(500).json({ error: "Erreur de lecture du document." });
+  }
+});
+
+app.delete('/api/documents/:id', async (req, res) => {
+  try {
+    await deleteOrphanDocument(req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
+    console.error("Error deleting document:", error);
+    res.status(500).json({ error: "Erreur de suppression du document." });
   }
 });
 

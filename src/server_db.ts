@@ -6,8 +6,9 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { SEED_GEMSTONES, SEED_PURCHASES, SEED_LOTS } from './data';
-import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot, InvoicingStatus } from './types';
+import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot, InvoicingStatus, PurchaseDocument } from './types';
 
 export const DB_FILE_PATH = path.join(process.cwd(), 'gemophy.db');
 // Ancienne base JSON (générée par la version AI Studio) : importée puis archivée au premier lancement
@@ -182,6 +183,7 @@ function getConnection(): Database.Database {
   ensureSupplierReferenceColumn(db);
   ensureInvoiceSnapshotColumns(db);
   ensureSupplierPostalCodeColumn(db);
+  ensurePurchaseDocumentsTable(db);
   ensureAppFlagsTable(db);
   ensureInvoiceNumberUniqueIndex(db);
   bootstrapIfEmpty(db);
@@ -240,6 +242,24 @@ function ensureSupplierPostalCodeColumn(conn: Database.Database) {
     console.log('[SQLite] Migration : ajout de postal_code sur suppliers...');
     conn.exec('ALTER TABLE suppliers ADD COLUMN postal_code TEXT;');
   }
+}
+
+// Documents joints aux achats (le fichier est sur disque, seule sa description est en base)
+function ensurePurchaseDocumentsTable(conn: Database.Database) {
+  conn.exec(`
+    CREATE TABLE IF NOT EXISTS purchase_documents (
+      id TEXT PRIMARY KEY,
+      purchase_id TEXT,
+      original_name TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      sha256 TEXT NOT NULL,
+      stored_name TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_documents_purchase ON purchase_documents(purchase_id);
+    CREATE INDEX IF NOT EXISTS idx_purchase_documents_sha ON purchase_documents(sha256);
+  `);
 }
 
 // Petits indicateurs de l'application (ex. : la facturation réelle a démarré)
@@ -1015,10 +1035,94 @@ export async function restoreGemstone(id: string): Promise<void> {
 }
 
 export async function getAllPurchases(): Promise<Purchase[]> {
-  return getConnection()
+  const conn = getConnection();
+  const docsByPurchase = new Map<string, PurchaseDocument[]>();
+  for (const r of conn.prepare('SELECT * FROM purchase_documents WHERE purchase_id IS NOT NULL ORDER BY created_at').all() as any[]) {
+    const list = docsByPurchase.get(r.purchase_id) ?? [];
+    list.push(rowToDocument(r));
+    docsByPurchase.set(r.purchase_id, list);
+  }
+  return conn
     .prepare('SELECT * FROM purchases WHERE deleted_at IS NULL ORDER BY date DESC')
     .all()
-    .map(rowToPurchase);
+    .map(rowToPurchase)
+    .map(p => ({ ...p, documents: docsByPurchase.get(p.id) ?? [] }));
+}
+
+/* ==========================================================================
+   Documents joints aux achats (facture fournisseur PDF / scan)
+   ========================================================================== */
+export class DocumentError extends Error {}
+
+export const DOCUMENTS_DIR = path.join(path.dirname(DB_FILE_PATH), 'documents', 'achats');
+const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
+// Types acceptés, contrôlés sur le contenu (les premiers octets), pas seulement sur l'extension ou le type annoncé
+const DOCUMENT_TYPES: Record<string, { ext: string; magic: number[] }> = {
+  'application/pdf': { ext: 'pdf', magic: [0x25, 0x50, 0x44, 0x46] },
+  'image/jpeg': { ext: 'jpg', magic: [0xff, 0xd8, 0xff] },
+  'image/png': { ext: 'png', magic: [0x89, 0x50, 0x4e, 0x47] }
+};
+
+function rowToDocument(r: any): PurchaseDocument {
+  return { id: r.id, purchaseId: r.purchase_id ?? undefined, name: r.original_name, mime: r.mime, size: r.size, sha256: r.sha256, createdAt: r.created_at };
+}
+
+// Enregistre un fichier envoyé (contenu en base64). Il reste « libre » (non rattaché) jusqu'à
+// l'enregistrement de l'achat, qui le rattache définitivement.
+export async function saveDocument(input: { name?: unknown; mime?: unknown; data?: unknown }): Promise<PurchaseDocument> {
+  const conn = getConnection();
+  const mime = String(input.mime ?? '').toLowerCase();
+  const type = DOCUMENT_TYPES[mime];
+  if (!type) throw new DocumentError('Format non accepté : PDF, JPEG ou PNG uniquement.');
+  if (typeof input.data !== 'string' || !input.data) throw new DocumentError('Fichier vide.');
+  const b64 = input.data.replace(/^data:[^,]*,/, '');
+  const buf = Buffer.from(b64, 'base64');
+  if (buf.length === 0) throw new DocumentError('Fichier vide.');
+  if (buf.length > MAX_DOCUMENT_BYTES) throw new DocumentError('Fichier trop volumineux (15 Mo maximum).');
+  if (!type.magic.every((b, i) => buf[i] === b)) throw new DocumentError("Le contenu ne correspond pas au format annoncé : fichier refusé.");
+
+  // nom affiché : sans chemin ni caractères de contrôle
+  const name = String(input.name ?? '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim().slice(0, 200) || `document.${type.ext}`;
+  const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+  // même fichier déjà rattaché à un achat : on le signale (le comptable ne veut pas de doublon)
+  const dup = conn.prepare(`SELECT p.reference AS ref FROM purchase_documents d JOIN purchases p ON p.id = d.purchase_id
+                            WHERE d.sha256 = ? AND p.deleted_at IS NULL LIMIT 1`).get(sha256) as { ref: string } | undefined;
+
+  const id = `doc-${crypto.randomUUID()}`;
+  const storedName = `${id}.${type.ext}`;
+  fs.mkdirSync(DOCUMENTS_DIR, { recursive: true });
+  const filePath = path.join(DOCUMENTS_DIR, storedName);
+  fs.writeFileSync(filePath, buf, { flag: 'wx' });
+  try {
+    conn.prepare('INSERT INTO purchase_documents (id, purchase_id, original_name, mime, size, sha256, stored_name, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, mime, buf.length, sha256, storedName, new Date().toISOString());
+  } catch (e) {
+    fs.rmSync(filePath, { force: true });
+    throw e;
+  }
+  return { id, name, mime, size: buf.length, sha256, createdAt: new Date().toISOString(), ...(dup ? { duplicateOfPurchase: dup.ref } : {}) };
+}
+
+// Fichier à servir : le chemin vient toujours de la base, jamais du client
+export async function getDocumentFile(id: string): Promise<{ doc: PurchaseDocument; filePath: string } | null> {
+  const r = getConnection().prepare('SELECT * FROM purchase_documents WHERE id = ?').get(id) as any;
+  if (!r) return null;
+  return { doc: rowToDocument(r), filePath: path.join(DOCUMENTS_DIR, r.stored_name) };
+}
+
+// Un document non rattaché (envoi abandonné) peut être retiré ; rattaché à un achat, il est archivé pour de bon
+export async function deleteOrphanDocument(id: string): Promise<void> {
+  const conn = getConnection();
+  const r = conn.prepare('SELECT * FROM purchase_documents WHERE id = ?').get(id) as any;
+  if (!r) return;
+  if (r.purchase_id) throw new InvoiceLockedError("Un document rattaché à un achat est archivé : il ne peut plus être supprimé.");
+  conn.prepare('DELETE FROM purchase_documents WHERE id = ?').run(id);
+  fs.rmSync(path.join(DOCUMENTS_DIR, r.stored_name), { force: true });
+}
+
+function linkDocuments(conn: Database.Database, purchaseId: string, ids: string[]) {
+  const link = conn.prepare('UPDATE purchase_documents SET purchase_id = ? WHERE id = ? AND (purchase_id IS NULL OR purchase_id = ?)');
+  for (const id of ids) link.run(purchaseId, id, purchaseId);
 }
 
 export async function savePurchase(p: Purchase): Promise<void> {
@@ -1043,6 +1147,7 @@ export async function savePurchase(p: Purchase): Promise<void> {
     upsertPurchase(conn, storedPurchase);
     createDirectEntryGemstones(conn, finalPurchase);
     if (previous) propagatePurchaseChanges(conn, previous, finalPurchase);
+    if (Array.isArray(p.documentIds) && p.documentIds.length > 0) linkDocuments(conn, finalPurchase.id, p.documentIds);
   });
   run();
 }
@@ -1502,7 +1607,7 @@ export async function getInvoicingStatus(): Promise<InvoicingStatus> {
   const invoices = n('SELECT COUNT(*) AS c FROM sales_invoices');
   const testDataCount = invoices + n('SELECT COUNT(*) AS c FROM bijoux') + n('SELECT COUNT(*) AS c FROM lots') +
     n('SELECT COUNT(*) AS c FROM purchases') + n(`SELECT COUNT(*) AS c FROM gemstones WHERE id NOT LIKE '${IMPORTED_GEM_PREFIX}%'`) +
-    n(`SELECT COUNT(*) AS c FROM stock_movements WHERE ${TEST_MOVEMENTS_WHERE}`) + n('SELECT COUNT(*) AS c FROM price_guide WHERE deleted_at IS NOT NULL') +
+    n('SELECT COUNT(*) AS c FROM purchase_documents') + n(`SELECT COUNT(*) AS c FROM stock_movements WHERE ${TEST_MOVEMENTS_WHERE}`) + n('SELECT COUNT(*) AS c FROM price_guide WHERE deleted_at IS NOT NULL') +
     n(`SELECT COUNT(*) AS c FROM suppliers WHERE deleted_at IS NOT NULL AND id NOT LIKE 'SUP-IMP-%'`) +
     n(`SELECT COUNT(*) AS c FROM clients WHERE deleted_at IS NOT NULL AND id NOT LIKE 'CLI-IMP-%'`);
   return { live: !!flag, liveSince: flag?.value, invoiceCount: invoices, testDataCount };
@@ -1533,6 +1638,7 @@ const TEST_MOVEMENTS_WHERE =
 // et d'avoir sont effacés).
 export async function purgeTestData(): Promise<{ deleted: Record<string, number> }> {
   const conn = getConnection();
+  const docFilesToRemove: string[] = [];
   const run = conn.transaction(() => {
     if ((conn.prepare("SELECT 1 FROM app_flags WHERE key = 'invoicing_live_since'").get())) {
       throw new InvoiceLockedError("La facturation réelle a démarré : les données ne peuvent plus être purgées.");
@@ -1546,6 +1652,9 @@ export async function purgeTestData(): Promise<{ deleted: Record<string, number>
     d.lots = conn.prepare('DELETE FROM lots').run().changes;
     d.pierres = conn.prepare('DELETE FROM gemstones WHERE id NOT LIKE ?').run(keep).changes;
     d.achats = conn.prepare('DELETE FROM purchases').run().changes;
+    // documents d'achats de test (les fichiers sont effacés après la transaction)
+    docFilesToRemove.push(...(conn.prepare('SELECT stored_name FROM purchase_documents').all() as { stored_name: string }[]).map(x => x.stored_name));
+    d.documents = conn.prepare('DELETE FROM purchase_documents').run().changes;
     d.bareme = conn.prepare('DELETE FROM price_guide WHERE deleted_at IS NOT NULL').run().changes;
     d.fournisseurs = conn.prepare("DELETE FROM suppliers WHERE deleted_at IS NOT NULL AND id NOT LIKE 'SUP-IMP-%'").run().changes;
     d.clients = conn.prepare("DELETE FROM clients WHERE deleted_at IS NOT NULL AND id NOT LIKE 'CLI-IMP-%'").run().changes;
@@ -1553,7 +1662,9 @@ export async function purgeTestData(): Promise<{ deleted: Record<string, number>
     if (fk.length) throw new Error('Purge annulée : violations de clés étrangères.');
     return d;
   });
-  return { deleted: run() };
+  const deleted = run();
+  for (const f of docFilesToRemove) fs.rmSync(path.join(DOCUMENTS_DIR, f), { force: true });
+  return { deleted };
 }
 
 export async function deleteSalesInvoice(id: string): Promise<void> {
