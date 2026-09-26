@@ -154,6 +154,7 @@ export interface Supplier {
   email?: string;
   phone?: string;
   address?: string;
+  postalCode?: string;
   city?: string;
   country?: string;
   vatNumber?: string;

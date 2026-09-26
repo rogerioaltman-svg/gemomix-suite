@@ -181,6 +181,7 @@ function getConnection(): Database.Database {
   ensureDeletedAtColumns(db);
   ensureSupplierReferenceColumn(db);
   ensureInvoiceSnapshotColumns(db);
+  ensureSupplierPostalCodeColumn(db);
   ensureAppFlagsTable(db);
   ensureInvoiceNumberUniqueIndex(db);
   bootstrapIfEmpty(db);
@@ -229,6 +230,15 @@ function ensureSupplierReferenceColumn(conn: Database.Database) {
   if (!cols.includes('no_supplier_invoice')) {
     console.log('[SQLite] Migration : ajout de no_supplier_invoice sur purchases...');
     conn.exec(`ALTER TABLE purchases ADD COLUMN no_supplier_invoice INTEGER NOT NULL DEFAULT 0;`);
+  }
+}
+
+// Code postal des fournisseurs (les clients l'avaient déjà)
+function ensureSupplierPostalCodeColumn(conn: Database.Database) {
+  const cols = (conn.pragma('table_info(suppliers)') as any[]).map(c => c.name);
+  if (!cols.includes('postal_code')) {
+    console.log('[SQLite] Migration : ajout de postal_code sur suppliers...');
+    conn.exec('ALTER TABLE suppliers ADD COLUMN postal_code TEXT;');
   }
 }
 
@@ -619,6 +629,7 @@ function rowToSupplier(r: any): Supplier {
     email: r.email ?? undefined,
     phone: r.phone ?? undefined,
     address: r.address ?? undefined,
+    postalCode: r.postal_code ?? undefined,
     city: r.city ?? undefined,
     country: r.country ?? undefined,
     vatNumber: r.vat_number ?? undefined,
@@ -629,8 +640,8 @@ function rowToSupplier(r: any): Supplier {
 
 function upsertSupplier(conn: Database.Database, s: Supplier) {
   conn.prepare(`
-    INSERT OR REPLACE INTO suppliers (id, name, contact_name, email, phone, address, city, country, vat_number, notes, date_added)
-    VALUES (@id, @name, @contactName, @email, @phone, @address, @city, @country, @vatNumber, @notes, @dateAdded)
+    INSERT OR REPLACE INTO suppliers (id, name, contact_name, email, phone, address, postal_code, city, country, vat_number, notes, date_added)
+    VALUES (@id, @name, @contactName, @email, @phone, @address, @postalCode, @city, @country, @vatNumber, @notes, @dateAdded)
   `).run({
     id: s.id,
     name: s.name,
@@ -638,6 +649,7 @@ function upsertSupplier(conn: Database.Database, s: Supplier) {
     email: s.email ?? null,
     phone: s.phone ?? null,
     address: s.address ?? null,
+    postalCode: s.postalCode ?? null,
     city: s.city ?? null,
     country: s.country ?? null,
     vatNumber: s.vatNumber ?? null,

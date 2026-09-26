@@ -531,7 +531,7 @@ export default function ContactManager({
                             <MapPin className="h-3 w-3 text-gray-500 mt-0.5 shrink-0" />
                             <div>
                               {supplier.address && <div>{supplier.address}</div>}
-                              <div>{[supplier.city, supplier.country].filter(Boolean).join(', ')}</div>
+                              <div>{[supplier.postalCode, supplier.city, supplier.country].filter(Boolean).join(', ')}</div>
                             </div>
                           </div>
                         </td>

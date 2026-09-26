@@ -22,6 +22,7 @@ export default function SupplierFormModal({ supplier, onSave, onClose }: Supplie
     email: supplier?.email || '',
     phone: supplier?.phone || '',
     address: supplier?.address || '',
+    postalCode: supplier?.postalCode || '',
     city: supplier?.city || '',
     country: supplier?.country || 'France',
     vatNumber: supplier?.vatNumber || '',
@@ -40,6 +41,7 @@ export default function SupplierFormModal({ supplier, onSave, onClose }: Supplie
       email: form.email || undefined,
       phone: form.phone || undefined,
       address: form.address || undefined,
+      postalCode: form.postalCode || undefined,
       city: form.city || undefined,
       country: form.country || 'France',
       vatNumber: form.vatNumber || undefined,
@@ -109,20 +111,24 @@ export default function SupplierFormModal({ supplier, onSave, onClose }: Supplie
             </div>
           </div>
 
+          <div>
+            <label className={label}>ADRESSE</label>
+            <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={input} placeholder="Numéro, rue..." />
+          </div>
+
           <div className="grid grid-cols-3 gap-2">
-            <div className="col-span-2">
-              <label className={label}>ADRESSE</label>
-              <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={input} placeholder="Numéro, rue..." />
+            <div className="col-span-1">
+              <label className={label}>CODE POSTAL</label>
+              <input type="text" value={form.postalCode} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} className={input} placeholder="2018" />
             </div>
             <div className="col-span-1">
               <label className={label}>VILLE</label>
               <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className={input} placeholder="Anvers" />
             </div>
-          </div>
-
-          <div>
-            <label className={label}>PAYS</label>
-            <input type="text" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className={input} placeholder="France" />
+            <div className="col-span-1">
+              <label className={label}>PAYS</label>
+              <input type="text" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className={input} placeholder="France" />
+            </div>
           </div>
 
           <div>
