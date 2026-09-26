@@ -114,7 +114,6 @@ interface InventoryManagerProps {
 // Une donnée qui provient d'un document se corrige sur le document : la description de la
 // marchandise (facture de vente) par un avoir, le fournisseur et le prix d'achat (achat) dans l'achat.
 const CORRECTABLE_FIELDS: { key: string; label: string; numeric?: boolean; fromPurchase?: boolean }[] = [
-  { key: 'sellingPrice', label: 'Prix de vente (estimation)', numeric: true },
   { key: 'costPrice', label: "Prix d'achat", numeric: true, fromPurchase: true },
   { key: 'dealer', label: 'Fournisseur', fromPurchase: true }
 ];
@@ -183,7 +182,7 @@ export default function InventoryManager({
   // Pierre vendue : le cœur de la fiche est verrouillé, on ne corrige que par une correction tracée
   const soldLocked = selectedGem?.status === 'Vendu';
   const [showCorrection, setShowCorrection] = useState(false);
-  const [corrField, setCorrField] = useState('sellingPrice');
+  const [corrField, setCorrField] = useState('costPrice');
   const [corrValue, setCorrValue] = useState('');
   const [corrReason, setCorrReason] = useState('');
   const [corrError, setCorrError] = useState('');
@@ -452,8 +451,8 @@ export default function InventoryManager({
           <div id="gem-locked-banner" className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-300 leading-relaxed">
             <Lock className="h-4 w-4 mt-0.5 shrink-0" />
             <span>
-              <strong>Pierre vendue : fiche verrouillée.</strong> Seuls la description, l'emplacement et la photo se modifient.
-              Pour corriger une autre donnée, utilisez « Corriger une donnée » sous le statut.
+              <strong>Pierre vendue : fiche immuable.</strong> Ce qui a été vendu ne change plus. Une erreur sur la pierre se corrige par un avoir sur la facture de vente,
+              puis une nouvelle facture. Seuls le prix d'achat et le fournisseur d'une pierre du stock initial se corrigent (« Corriger une donnée », sous le statut).
             </span>
           </div>
         )}
@@ -753,16 +752,15 @@ export default function InventoryManager({
               {soldLocked && (
                 <>
                 <p id="gem-sold-note" className="mt-1 text-[10px] text-gray-500 leading-snug">
-                  Pierre vendue : sa fiche est verrouillée (seuls la description, l'emplacement et la photo restent modifiables) et son statut ne change que par un avoir sur la facture de vente.
+                  Pierre vendue : sa fiche est immuable et son statut ne change que par un avoir sur la facture de vente.
                 </p>
-                {onCorrectGem && (showCorrection ? (
+                {onCorrectGem && !selectedGem?.sourcePurchaseId && (showCorrection ? (
                   <div id="correction-panel" className="mt-2 rounded-lg border border-violet-500/30 bg-violet-500/10 p-3 space-y-2">
                     <p className="text-[10px] text-violet-200 leading-snug">
                       La correction est enregistrée dans l'historique de la pierre (ancienne valeur, nouvelle valeur, motif).
                     </p>
                     <p id="correction-rules" className="text-[10px] text-gray-400 leading-snug">
-                      {selectedGem?.sourcePurchaseId && "Le fournisseur et le prix d'achat proviennent de l'achat d'origine : modifiez-les dans « Achats & Lots », la fiche suivra. "}
-                      Une erreur sur la description de la pierre (variété, poids, taille, couleur, pureté, origine, traitement, certificat) se corrige par un avoir sur la facture de vente, puis une nouvelle facture.
+                      Une erreur sur la pierre elle-même (variété, poids, couleur, certificat, photo, description…) se corrige par un avoir sur la facture de vente, puis une nouvelle facture.
                     </p>
                     <select
                       id="correction-field"
@@ -770,7 +768,7 @@ export default function InventoryManager({
                       onChange={(e) => { setCorrField(e.target.value); setCorrValue(''); setCorrError(''); }}
                       className="w-full px-3 py-1.5 text-xs bg-[#171e2c] border border-[#27354d] text-gray-200 rounded-lg"
                     >
-                      {CORRECTABLE_FIELDS.filter(f => !(f.fromPurchase && selectedGem?.sourcePurchaseId)).map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                      {CORRECTABLE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
                     </select>
                     <input
                       id="correction-value"
@@ -821,6 +819,11 @@ export default function InventoryManager({
                     Corriger une donnée…
                   </button>
                 ))}
+                {onCorrectGem && selectedGem?.sourcePurchaseId && (
+                  <p id="gem-purchase-origin-note" className="mt-2 text-[10px] text-gray-400 leading-snug">
+                    Le fournisseur et le prix d'achat proviennent de l'achat d'origine : modifiez-les dans « Achats & Lots », la fiche suivra.
+                  </p>
+                )}
                 </>
               )}
             </div>
@@ -832,6 +835,7 @@ export default function InventoryManager({
                 id="gem-location-input"
                 type="text"
                 value={location}
+                disabled={soldLocked}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="ex: Coffre 2, tiroir B / confié à M. Durand"
                 className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none focus:border-[#b4985c]"
@@ -1017,12 +1021,14 @@ export default function InventoryManager({
 
             {/* Live Camera Reception Capture */}
             <div className="border-t border-gray-800 pt-4">
+              <fieldset disabled={soldLocked} className="contents">
               <PhotoCapture 
                 value={image}
                 onChange={setImage}
                 onClear={() => setImage('')}
                 label="Prise de vue Réception"
               />
+              </fieldset>
             </div>
 
           </div>
@@ -1034,13 +1040,15 @@ export default function InventoryManager({
           <textarea 
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            disabled={soldLocked}
             rows={3}
             className="w-full px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] rounded-lg text-white focus:outline-none focus:border-[#b4985c] placeholder-gray-600"
             placeholder="Écrivez vos observations cliniques : micro-fractures soignées, fluorescence, pléochroïsme ou toute note importante relative à l'estimation."
           ></textarea>
         </div>
 
-        {/* Actions Submit */}
+        {/* Actions Submit : rien à enregistrer sur une pierre vendue (fiche immuable) */}
+        {!soldLocked && (
         <div className="flex justify-end gap-3 pt-4 border-t border-gray-800">
           <button 
             type="button" 
@@ -1058,10 +1066,11 @@ export default function InventoryManager({
             <span>{id ? "Mettre à jour" : "Sauvegarder Pierre"}</span>
           </button>
         </div>
+        )}
       </form>
 
       {/* Historique des retailles : uniquement sur une pierre existante */}
-      {selectedGem && onUpdateGemInline && (
+      {selectedGem && !soldLocked && onUpdateGemInline && (
         <div className="px-6 pb-6" id="fiche-recutting-section">
           <div className="border-t border-gray-800 pt-5">
             <RecuttingSection

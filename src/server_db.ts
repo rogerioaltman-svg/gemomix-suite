@@ -856,12 +856,12 @@ export async function getAllGemstones(): Promise<Gemstone[]> {
 // description, l'emplacement et la photo restent modifiables ; le reste ne change que par une
 // correction tracée (correctSoldGemstone), jamais par une sauvegarde ordinaire.
 const SOLD_LOCKED_MESSAGE =
-  "Pierre vendue : cette donnée ne peut plus être modifiée directement. Utilisez « Corriger une donnée » (motif obligatoire, tracé dans l'historique).";
+  "Pierre vendue : sa fiche est immuable. Seuls le prix d'achat et le fournisseur d'une pierre du stock initial se corrigent (« Corriger une donnée », motif obligatoire) ; le reste se corrige par un avoir sur la facture de vente.";
 
 function soldIdentity(g: Gemstone): string {
   const n = (x: unknown) => Number(x) || 0;
   return JSON.stringify([
-    g.reference, g.type, n(g.weight), g.cut ?? '', g.color ?? '', g.clarity ?? '',
+    g.reference, g.type, n(g.weight), g.cut ?? '', g.color ?? '', g.clarity ?? '', g.description ?? '', g.location ?? '',
     n(g.dimensions?.length), n(g.dimensions?.width), n(g.dimensions?.depth),
     g.refractiveIndex ?? '', n(g.specificGravity), g.treatment ?? '', g.origin ?? '',
     g.certificate?.authority ?? 'Sans', g.certificate?.number ?? '',
@@ -888,6 +888,9 @@ export async function saveGemstone(gem: Gemstone): Promise<void> {
   if (existing?.status === 'Vendu') {
     const currentRow = conn.prepare('SELECT * FROM gemstones WHERE id = ?').get(gem.id);
     if (soldIdentity(rowToGemstone(currentRow)) !== soldIdentity(finalGem)) throw new InvoiceLockedError(SOLD_LOCKED_MESSAGE);
+    // La photo est une preuve de ce qui a été vendu : ni remplacée ni retirée (undefined = conservée)
+    const currentImage = ((currentRow as any).image as string | null) ?? '';
+    if (gem.image !== undefined && (gem.image ?? '') !== currentImage) throw new InvoiceLockedError(SOLD_LOCKED_MESSAGE);
   }
   upsertGemstone(conn, finalGem);
 
@@ -924,15 +927,15 @@ export async function saveGemstone(gem: Gemstone): Promise<void> {
 //  - description de la marchandise vendue (variété, poids, taille, couleur, pureté, origine, traitement,
 //    certificat) : elle figure sur la facture de vente -> avoir, puis nouvelle facture ;
 //  - fournisseur et prix d'achat d'une pierre issue d'un achat : à corriger dans l'achat (la fiche suit) ;
-//  - prix de vente estimé, et fournisseur / prix d'achat d'une pierre sans achat (stock initial) : sans
-//    document source dans l'application, corrigeables ici avec motif.
+//  - fournisseur / prix d'achat d'une pierre sans achat (stock initial) : sans document source dans
+//    l'application, corrigeables ici avec motif (provisoire, avant le ledger) ;
+//  - tout le reste (description, photo, emplacement, estimation) est immuable après la vente.
 export const CORRECTABLE_GEM_FIELDS: Record<string, { label: string; kind: 'text' | 'number'; fromPurchase?: boolean }> = {
-  sellingPrice: { label: 'Prix de vente (estimation)', kind: 'number' },
   costPrice: { label: "Prix d'achat", kind: 'number', fromPurchase: true },
   dealer: { label: 'Fournisseur', kind: 'text', fromPurchase: true }
 };
 
-const SOLD_DESCRIPTION_FIELDS = ['type', 'weight', 'cut', 'color', 'clarity', 'origin', 'treatment', 'certAuthority', 'certNumber'];
+const SOLD_DESCRIPTION_FIELDS = ['type', 'weight', 'cut', 'color', 'clarity', 'origin', 'treatment', 'certAuthority', 'certNumber', 'description', 'location', 'image'];
 
 export async function correctSoldGemstone(id: string, field: string, rawValue: unknown, reason: unknown): Promise<void> {
   const conn = getConnection();
@@ -943,6 +946,9 @@ export async function correctSoldGemstone(id: string, field: string, rawValue: u
       throw new InvoiceLockedError("Cette correction ne concerne que les pierres vendues : modifiez directement la fiche.");
     }
     const def = CORRECTABLE_GEM_FIELDS[field];
+    if (field === 'sellingPrice') {
+      throw new InvoiceLockedError("Le prix de vente réel figure sur la facture : l'estimation d'une pierre vendue ne se modifie plus.");
+    }
     if (!def) {
       throw new InvoiceLockedError(SOLD_DESCRIPTION_FIELDS.includes(field)
         ? "Cette donnée décrit la marchandise vendue et figure sur la facture : corrigez-la par un avoir sur la facture de vente, puis refacturez."

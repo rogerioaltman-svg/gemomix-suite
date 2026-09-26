@@ -532,7 +532,8 @@ body:has(.light-theme) {
 
 /* Fiche d'une pierre vendue : les champs verrouillés doivent se voir au premier coup d'œil */
 form[data-sold-locked] input:disabled,
-form[data-sold-locked] select:disabled {
+form[data-sold-locked] select:disabled,
+form[data-sold-locked] textarea:disabled {
   opacity: 1;
   background-color: transparent !important;
   border-style: dashed !important;
