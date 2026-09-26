@@ -12,6 +12,7 @@ import {
   Weight,
   Search,
   SlidersHorizontal,
+  Settings2,
   Plus,
   ChevronRight,
   Trash2,
@@ -27,6 +28,7 @@ interface StockListProps {
   onSelectGem: (gem: Gemstone) => void;
   onNewGem: () => void;
   onNavigateToTab: (tab: string) => void;
+  onOpenTriage?: (purchaseId: string, articleId: string) => void; // ouvre directement le tri d'un colis
   onDeleteGem: (id: string) => void;
   onDeleteLot: (id: string) => void;
 }
@@ -38,6 +40,7 @@ export default function StockList({
   onSelectGem,
   onNewGem,
   onNavigateToTab,
+  onOpenTriage,
   onDeleteGem,
   onDeleteLot
 }: StockListProps) {
@@ -48,6 +51,32 @@ export default function StockList({
 
   // Advanced filters state
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  // Colonnes facultatives : le tableau reste compact par défaut, chacun peut en ajouter (choix mémorisé sur ce poste)
+  const OPTIONAL_COLS = [
+    { key: 'color', label: 'Couleur' },
+    { key: 'clarity', label: 'Pureté' },
+    { key: 'treatment', label: 'Traitement' },
+    { key: 'origin', label: 'Origine' },
+    { key: 'location', label: 'Emplacement' }
+  ] as const;
+  type OptKey = typeof OPTIONAL_COLS[number]['key'];
+  const [visibleCols, setVisibleCols] = useState<OptKey[]>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('stock.visibleCols') || '[]');
+      return Array.isArray(v) ? v.filter((k: string) => OPTIONAL_COLS.some(c => c.key === k)) : [];
+    } catch { return []; }
+  });
+  const [showColMenu, setShowColMenu] = useState(false);
+  const setCols = (next: OptKey[]) => {
+    setVisibleCols(next);
+    try { localStorage.setItem('stock.visibleCols', JSON.stringify(next)); } catch { /* préférence non mémorisée */ }
+  };
+  const hasCol = (k: OptKey) => visibleCols.includes(k);
+  const colValue = (item: any, k: OptKey): string => {
+    const v = k === 'color' ? item.criteriaColor : k === 'clarity' ? item.criteriaClarity : k === 'treatment' ? (item.type === 'stone' ? item.treatment : '') : k === 'origin' ? item.origin : item.location;
+    return !v || v === 'N/A' || v === 'Aucun' || v === 'Sans' ? '' : String(v);
+  };
   const [minWeight, setMinWeight] = useState<string>('');
   const [maxWeight, setMaxWeight] = useState<string>('');
   const [minPrice, setMinPrice] = useState<string>('');
@@ -175,7 +204,7 @@ export default function StockList({
               reference: `${p.reference}-${art.id.split('-').pop()?.substring(0, 4)}`,
               variety: art.gemstoneType,
               weight: remainingWeight,
-              details: `Colis brut en attente de tri (${art.name})`,
+              details: `Colis à trier · ${art.name}`,
               criteriaColor: 'Brut non trié',
               criteriaClarity: 'Inconnue',
               treatment: 'Non traité',
@@ -320,6 +349,38 @@ export default function StockList({
               <span>Filtres Avancés</span>
             </button>
 
+            {/* Choix des colonnes */}
+            <div className="relative">
+              <button
+                id="btn-columns"
+                type="button"
+                onClick={() => setShowColMenu(v => !v)}
+                title="Choisir les colonnes affichées"
+                aria-label="Choisir les colonnes affichées"
+                className={`p-2 border rounded-lg transition-colors ${showColMenu || visibleCols.length ? 'bg-[#2b3952] border-[#4a5f87] text-white' : 'bg-[#171e2c] border-[#27354d] text-gray-300 hover:text-white'}`}
+              >
+                <Settings2 className="h-4 w-4" />
+              </button>
+              {showColMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowColMenu(false)} />
+                  <div id="columns-menu" className="absolute right-0 mt-2 w-56 z-20 bg-[#171e2c] border border-[#27354d] rounded-lg shadow-xl p-3 space-y-2 text-xs">
+                    <p className="text-[10px] font-mono uppercase text-gray-500">Colonnes supplémentaires</p>
+                    {OPTIONAL_COLS.map(c => (
+                      <label key={c.key} className="flex items-center gap-2 text-gray-200 cursor-pointer">
+                        <input type="checkbox" checked={hasCol(c.key)} onChange={() => setCols(hasCol(c.key) ? visibleCols.filter(k => k !== c.key) : OPTIONAL_COLS.map(o => o.key).filter(k => k === c.key || hasCol(k)))} />
+                        {c.label}
+                      </label>
+                    ))}
+                    <p className="text-[10px] text-gray-500 leading-snug">Référence, désignation, poids, fournisseur, prix, statut et actions restent toujours affichés.</p>
+                    {visibleCols.length > 0 && (
+                      <button type="button" onClick={() => setCols([])} className="text-[#e0b760] hover:underline">Réinitialiser</button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
             {/* Variety filter */}
             <div className="relative">
               <select 
@@ -413,16 +474,13 @@ export default function StockList({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-[#171d2b] border-b border-[#212a3d] text-gray-400 text-[11px] font-mono tracking-wider uppercase">
-                <th className="py-3 px-3 whitespace-nowrap">Type</th>
                 <th className="py-3 px-3 whitespace-nowrap">Référence</th>
-                <th className="py-3 px-3 whitespace-nowrap">Variété</th>
+                <th className="py-3 px-3 w-full">Pierre / Désignation</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">Poids (ct)</th>
-                <th className="py-3 px-3 whitespace-nowrap">Taille</th>
-                <th className="py-3 px-3 whitespace-nowrap">Couleur / Pureté</th>
-                <th className="py-3 px-3 whitespace-nowrap">Origine</th>
+                {OPTIONAL_COLS.filter(c => hasCol(c.key)).map(c => (
+                  <th key={c.key} className="py-3 px-3 whitespace-nowrap">{c.label}</th>
+                ))}
                 <th className="py-3 px-3 whitespace-nowrap">Fournisseur</th>
-                <th className="py-3 px-3 whitespace-nowrap">Certificat</th>
-                <th className="py-3 px-3 whitespace-nowrap">Emplacement</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">Revente / Achat</th>
                 <th className="py-3 px-3 text-center whitespace-nowrap">Statut</th>
                 <th className="py-3 px-3 text-center whitespace-nowrap">Actions</th>
@@ -431,7 +489,7 @@ export default function StockList({
             <tbody className="divide-y divide-[#1e2739] text-xs">
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-gray-500 font-mono">
+                  <td colSpan={7 + visibleCols.length} className="py-12 text-center text-gray-500 font-mono">
                     <Inbox className="h-8 w-8 mx-auto text-gray-700 mb-2" />
                     Aucune ressource (pierre unique ou lot de tri) ne correspond à ces critères.
                   </td>
@@ -448,93 +506,78 @@ export default function StockList({
                       }
                     }}
                   >
-                    {/* Item type badge */}
-                    <td className="py-3.5 px-3 font-mono">
-                      {item.type === 'stone' ? (
-                        <span className="px-1.5 py-0.5 bg-[#bda165]/10 text-[#eedfa7] border border-[#bda165]/30 rounded text-[9px] font-bold tracking-wider">
-                          PIECE
-                        </span>
-                      ) : item.type === 'purchase_article' ? (
-                        <span className="px-1.5 py-0.5 bg-cyan-500/10 text-cyan-400 border border-cyan-500/25 rounded text-[9px] font-bold tracking-wider">
-                          BRUT/COLIS
-                        </span>
-                      ) : (
-                        <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 rounded text-[9px] font-bold tracking-wider">
-                          VRAC/LOT
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Reference & Creation Date */}
-                    <td className="py-3.5 px-3 font-mono whitespace-nowrap">
-                      <div className="font-semibold text-white flex items-center gap-1">
+                    {/* Référence : icône du type, référence, puis type · date · achat d'origine · emplacement */}
+                    <td className="py-3 px-3 font-mono whitespace-nowrap">
+                      <div className="font-semibold text-white flex items-center gap-1.5">
                         {item.type === 'stone' ? (
-                          <Diamond className="h-3 w-3 text-[#bda165] shrink-0" />
+                          <Diamond className="h-3.5 w-3.5 text-[#bda165] shrink-0" />
                         ) : item.type === 'purchase_article' ? (
-                          <ShoppingBag className="h-3 w-3 text-cyan-400 shrink-0" />
+                          <ShoppingBag className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
                         ) : (
-                          <Inbox className="h-3 w-3 text-emerald-400 shrink-0" />
+                          <Inbox className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
                         )}
                         <span>{item.reference}</span>
                       </div>
-                      <span className="text-gray-500 text-[10px] block mt-0.5">{item.date}{item.sourceNote ? ` · ${item.sourceNote}` : ''}</span>
+                      <span
+                        className="text-gray-500 text-[10px] block mt-0.5 max-w-[15rem] truncate"
+                        title={[item.type === 'stone' ? 'Pièce' : item.type === 'purchase_article' ? 'Colis' : 'Lot', item.date, item.sourceNote, item.location].filter(Boolean).join(' · ')}
+                      >
+                        {[item.type === 'stone' ? 'PIÈCE' : item.type === 'purchase_article' ? 'COLIS' : 'LOT', item.date, item.sourceNote, item.location].filter(Boolean).join(' · ')}
+                      </span>
                     </td>
 
-                    {/* Variety display */}
-                    <td className="py-3.5 px-3 font-bold text-gray-100 font-sans">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`inline-block w-2.5 h-2.5 rounded-full ${varietyColorDot(item.variety)}`}></span>
-                        <span>{item.variety}</span>
+                    {/* Pierre / Désignation : variété + certificat, puis taille · couleur · pureté · traitement (une ligne, tronquée) */}
+                    <td className="py-3 px-3 font-sans w-full max-w-0">
+                      <div className="flex items-center gap-1.5 font-bold text-gray-100 min-w-0">
+                        <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${varietyColorDot(item.variety)}`}></span>
+                        <span className="truncate">{item.variety}</span>
+                        {item.certificate && (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded border border-yellow-500/30 bg-yellow-500/10 text-yellow-400 text-[9px] font-mono font-bold" title="Certificat">
+                            {item.certificate}
+                          </span>
+                        )}
                       </div>
+                      {(() => {
+                        const skip = (v: string) => !v || v === 'N/A' || v === 'Aucun' || v === 'Sans' || v === 'Colis de Brut trié';
+                        const aspect = [item.details, hasCol('color') ? '' : item.criteriaColor, hasCol('clarity') ? '' : item.criteriaClarity, item.type === 'stone' && !hasCol('treatment') ? item.treatment : '']
+                          .filter(v => !skip(v)).join(' · ');
+                        return (
+                          <div className="text-[11px] text-gray-400 truncate mt-0.5" title={aspect || undefined}>
+                            {aspect || <span className="text-gray-600">—</span>}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Weight (ct) */}
-                    <td className="py-3.5 px-3 text-right font-mono font-extrabold text-white text-[13px]">
+                    <td className="py-3 px-3 text-right font-mono font-extrabold text-white text-[13px] whitespace-nowrap">
                       {item.weight.toFixed(2)} <span className="text-[10px] text-gray-500 font-normal">ct</span>
                     </td>
 
-                    {/* Aspect details (Cut or shape description) */}
-                    <td className="py-3.5 px-3 text-gray-300">
-                      {item.details}
-                    </td>
+                    {OPTIONAL_COLS.filter(c => hasCol(c.key)).map(c => (
+                      <td key={c.key} className="py-3 px-3 text-[11px] text-gray-300 whitespace-nowrap max-w-[10rem] truncate" title={colValue(item, c.key) || undefined}>
+                        {colValue(item, c.key) || <span className="text-gray-600">—</span>}
+                      </td>
+                    ))}
 
-                    {/* Aspect Criteria / 4Cs */}
-                    <td className="py-3.5 px-3 leading-relaxed">
-                      <div className="text-gray-300 font-mono text-[11px]">{item.criteriaColor}</div>
-                      <div className="text-gray-500 text-[10px] mt-0.5">{item.criteriaClarity !== 'N/A' && `Clarté : ${item.criteriaClarity}`}</div>
-                    </td>
-
-                    {/* Geographic Origin */}
-                    <td className="py-3.5 px-3">
-                      <div className="text-gray-200 font-semibold">{item.origin || <span className="text-gray-600 font-normal">—</span>}</div>
-                      <span className="text-amber-500 text-[10px] font-mono">{item.treatment}</span>
-                    </td>
-
-                    {/* Fournisseur (négociant) : distinct de l'origine géographique */}
-                    <td className="py-3.5 px-3 text-[11px] text-gray-300 max-w-[11rem]">
-                      {item.supplier || <span className="text-gray-600">—</span>}
-                    </td>
-
-                    {/* Certificat (pierres uniquement) */}
-                    <td className="py-3.5 px-3 font-mono text-[11px] whitespace-nowrap">
-                      {item.certificate
-                        ? <span className="text-yellow-400 font-bold">{item.certificate}</span>
-                        : <span className="text-gray-600">—</span>}
-                    </td>
-
-                    {/* Emplacement physique (pierre) / rangement (lot) */}
-                    <td className="py-3.5 px-3 text-[11px] text-gray-300">
-                      {item.location || <span className="text-gray-600">—</span>}
+                    {/* Fournisseur ; l'origine géographique n'apparaît que si elle est connue */}
+                    <td className="py-3 px-3 text-[11px] max-w-[13rem]">
+                      <div className="text-gray-200 truncate" title={item.supplier || undefined}>
+                        {item.supplier || <span className="text-gray-600">—</span>}
+                      </div>
+                      {item.origin && (
+                        <div className="text-gray-500 text-[10px] truncate" title={`Origine : ${item.origin}`}>Origine : {item.origin}</div>
+                      )}
                     </td>
 
                     {/* Prix : revente estimée (en avant) et coût d'achat en dessous */}
-                    <td className="py-3.5 px-3 text-right font-mono whitespace-nowrap">
+                    <td className="py-3 px-3 text-right font-mono whitespace-nowrap">
                       {item.value > 0 ? (
                         <div className="font-bold text-[#e0b760]">{Math.round(item.value).toLocaleString('fr-FR')} €</div>
                       ) : (
                         <div className="text-gray-500 italic font-sans font-normal text-[10px]">Non estimée</div>
                       )}
-                      <div className="text-[10px] text-gray-500 mt-0.5" >
+                      <div className="text-[10px] text-gray-500 mt-0.5">
                         achat {item.cost > 0 ? `${Math.round(item.cost).toLocaleString('fr-FR')} €` : '—'}
                       </div>
                     </td>
@@ -571,7 +614,10 @@ export default function StockList({
                         ) : item.type === 'purchase_article' ? (
                           <button 
                             title="Trier ce colis brut d'achat"
-                            onClick={() => onNavigateToTab('purchases')}
+                            onClick={() => {
+                              const owner = purchases.find(p => p.articles?.some(a => a.id === item.id));
+                              if (owner && onOpenTriage) onOpenTriage(owner.id, item.id); else onNavigateToTab('purchases');
+                            }}
                             className="px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500 hover:text-black hover:border-cyan-500 rounded text-[10px] font-mono font-bold text-cyan-400 transition-all flex items-center gap-1"
                           >
                             <span>Trier</span>
@@ -581,7 +627,10 @@ export default function StockList({
                           <>
                             <button 
                               title="Gérer le Triage"
-                              onClick={() => onNavigateToTab('purchases')}
+                              onClick={() => {
+                                const l = item.raw as Lot;
+                                if (l?.purchaseId && l?.purchaseArticleId && onOpenTriage) onOpenTriage(l.purchaseId, l.purchaseArticleId); else onNavigateToTab('purchases');
+                              }}
                               className="text-gray-400 hover:text-emerald-400 transition-colors p-1 flex items-center"
                             >
                               <Layers className="h-3.5 w-3.5" />
