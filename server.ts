@@ -17,7 +17,7 @@ import {
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
   getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice, InvoiceLockedError,
-  getInvoicingStatus, startLiveInvoicing, purgeTestInvoices, createCreditNote, correctSoldGemstone,
+  getInvoicingStatus, startLiveInvoicing, purgeTestData, createCreditNote, correctSoldGemstone,
   getCompanySettings, saveCompanySettings,
   getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
   getTrash, restoreTrashItem,
@@ -352,11 +352,11 @@ app.post('/api/invoicing/go-live', async (req, res) => {
 
 app.post('/api/invoicing/purge-tests', async (req, res) => {
   try {
-    res.json({ success: true, ...(await purgeTestInvoices()) });
+    res.json({ success: true, ...(await purgeTestData()) });
   } catch (error: any) {
     if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error purging test invoices:", error);
-    res.status(500).json({ error: "Erreur de purge des factures de test." });
+    res.status(500).json({ error: "Erreur de purge des données de test." });
   }
 });
 

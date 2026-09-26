@@ -746,7 +746,7 @@ export default function InventoryManager({
               >
                 <option value="Disponible">Disponible</option>
                 <option value="Réservé">Réservé</option>
-                <option value="Vendu">Vendu</option>
+                {selectedGem?.status === 'Vendu' && <option value="Vendu">Vendu (par facture)</option>}
                 <option value="Confié">Confié</option>
               </select>
               {soldLocked && (

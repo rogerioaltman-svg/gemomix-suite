@@ -878,6 +878,10 @@ export async function saveGemstone(gem: Gemstone): Promise<void> {
   // achat (provenance manuelle) restent librement renommables.
   const existing = conn.prepare('SELECT reference, source_purchase_id, weight, recuttings, status FROM gemstones WHERE id = ?').get(gem.id) as
     { reference: string; source_purchase_id: string | null; weight: number; recuttings: string | null; status: string } | undefined;
+  // « Vendu » ne se pose jamais à la main : uniquement par une facture émise (saveSalesInvoice)
+  if (gem.status === 'Vendu' && existing?.status !== 'Vendu') {
+    throw new InvoiceLockedError("Une pierre ne passe « Vendu » que par une facture émise, jamais à la main.");
+  }
   // Une pierre vendue ne repasse en stock que par un avoir (createCreditNote), jamais à la main
   if (existing?.status === 'Vendu' && gem.status !== 'Vendu') {
     throw new InvoiceLockedError("Cette pierre est vendue : son statut ne change que par un avoir sur la facture de vente.");
@@ -1482,8 +1486,14 @@ export async function createCreditNote(invoiceId: string, restock: boolean): Pro
 export async function getInvoicingStatus(): Promise<InvoicingStatus> {
   const conn = getConnection();
   const flag = conn.prepare("SELECT value FROM app_flags WHERE key = 'invoicing_live_since'").get() as { value: string } | undefined;
-  const count = (conn.prepare('SELECT COUNT(*) AS c FROM sales_invoices').get() as { c: number }).c;
-  return { live: !!flag, liveSince: flag?.value, invoiceCount: count };
+  const n = (sql: string) => (conn.prepare(sql).get() as { c: number }).c;
+  const invoices = n('SELECT COUNT(*) AS c FROM sales_invoices');
+  const testDataCount = invoices + n('SELECT COUNT(*) AS c FROM bijoux') + n('SELECT COUNT(*) AS c FROM lots') +
+    n('SELECT COUNT(*) AS c FROM purchases') + n(`SELECT COUNT(*) AS c FROM gemstones WHERE id NOT LIKE '${IMPORTED_GEM_PREFIX}%'`) +
+    n(`SELECT COUNT(*) AS c FROM stock_movements WHERE ${TEST_MOVEMENTS_WHERE}`) + n('SELECT COUNT(*) AS c FROM price_guide WHERE deleted_at IS NOT NULL') +
+    n(`SELECT COUNT(*) AS c FROM suppliers WHERE deleted_at IS NOT NULL AND id NOT LIKE 'SUP-IMP-%'`) +
+    n(`SELECT COUNT(*) AS c FROM clients WHERE deleted_at IS NOT NULL AND id NOT LIKE 'CLI-IMP-%'`);
+  return { live: !!flag, liveSince: flag?.value, invoiceCount: invoices, testDataCount };
 }
 
 // Démarre la facturation réelle : la purge des factures de test n'est plus possible
@@ -1493,15 +1503,43 @@ export async function startLiveInvoicing(): Promise<void> {
     .run(new Date().toISOString());
 }
 
-// Supprime définitivement TOUTES les factures (corbeille comprise), tant que la facturation
-// réelle n'a pas démarré. Le stock et le journal des mouvements ne sont pas modifiés.
-export async function purgeTestInvoices(): Promise<{ deleted: number }> {
+// Les pierres reprises de l'ancien système (script d'import) portent cet identifiant : elles ne sont
+// jamais supprimées par la purge des données de test.
+const IMPORTED_GEM_PREFIX = 'gem-access-';
+
+// Mouvements de test : tous, sauf ceux des pierres importées — dont on n'efface que les ventes, avoirs et
+// corrections d'essai. Même règle pour compter (état) et pour supprimer (purge).
+const TEST_MOVEMENTS_WHERE =
+  `(NOT (entity_type = 'gemstone' AND entity_id LIKE '${IMPORTED_GEM_PREFIX}%')) OR ` +
+  `(entity_type = 'gemstone' AND entity_id LIKE '${IMPORTED_GEM_PREFIX}%' AND (type = 'VENTE' OR notes LIKE 'Avoir AV-%' OR notes LIKE 'Correction (pierre vendue)%'))`;
+
+// Supprime définitivement TOUTES les données de test (corbeille comprise), tant que la facturation
+// réelle n'a pas démarré : factures et avoirs, achats, lots, bijoux, pierres, mouvements de stock,
+// et les éléments de test restés à la Corbeille (barème, fiches clients / fournisseurs). Sont conservés :
+// les clients et fournisseurs actifs, les paramètres de la société et le stock importé d'Access
+// (une pierre importée « vendue » lors d'un essai redevient disponible, ses mouvements de vente
+// et d'avoir sont effacés).
+export async function purgeTestData(): Promise<{ deleted: Record<string, number> }> {
   const conn = getConnection();
   const run = conn.transaction(() => {
     if ((conn.prepare("SELECT 1 FROM app_flags WHERE key = 'invoicing_live_since'").get())) {
-      throw new InvoiceLockedError("La facturation réelle a démarré : les factures ne peuvent plus être purgées.");
+      throw new InvoiceLockedError("La facturation réelle a démarré : les données ne peuvent plus être purgées.");
     }
-    return conn.prepare('DELETE FROM sales_invoices').run().changes;
+    const keep = `${IMPORTED_GEM_PREFIX}%`;
+    const d: Record<string, number> = {};
+    d.factures = conn.prepare('DELETE FROM sales_invoices').run().changes;
+    d.bijoux = conn.prepare('DELETE FROM bijoux').run().changes;
+    d.mouvements = conn.prepare(`DELETE FROM stock_movements WHERE ${TEST_MOVEMENTS_WHERE}`).run().changes;
+    conn.prepare("UPDATE gemstones SET status = 'Disponible' WHERE id LIKE ? AND status = 'Vendu'").run(keep);
+    d.lots = conn.prepare('DELETE FROM lots').run().changes;
+    d.pierres = conn.prepare('DELETE FROM gemstones WHERE id NOT LIKE ?').run(keep).changes;
+    d.achats = conn.prepare('DELETE FROM purchases').run().changes;
+    d.bareme = conn.prepare('DELETE FROM price_guide WHERE deleted_at IS NOT NULL').run().changes;
+    d.fournisseurs = conn.prepare("DELETE FROM suppliers WHERE deleted_at IS NOT NULL AND id NOT LIKE 'SUP-IMP-%'").run().changes;
+    d.clients = conn.prepare("DELETE FROM clients WHERE deleted_at IS NOT NULL AND id NOT LIKE 'CLI-IMP-%'").run().changes;
+    const fk = conn.pragma('foreign_key_check') as unknown[];
+    if (fk.length) throw new Error('Purge annulée : violations de clés étrangères.');
+    return d;
   });
   return { deleted: run() };
 }

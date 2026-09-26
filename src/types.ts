@@ -263,6 +263,7 @@ export interface InvoicingStatus {
   live: boolean;
   liveSince?: string;
   invoiceCount: number; // toutes les factures, corbeille comprise
+  testDataCount: number; // lignes que « Purger les données de test » supprimerait (hors stock importé, annuaires actifs, paramètres)
 }
 
 export interface SalesInvoice {

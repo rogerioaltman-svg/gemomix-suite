@@ -317,20 +317,21 @@ export default function SettingsManager({ settings, onSaveSettings, priceGuide =
         ) : (
           <div className="space-y-4">
             <p className="text-xs text-gray-400 leading-relaxed">
-              La facturation est en <span className="text-amber-400 font-semibold">mode test</span> : vous pouvez purger toutes les factures
-              d'essai ({invoicingStatus.invoiceCount} actuellement, corbeille comprise). Quand vos coordonnées sont à jour et que vous
-              êtes prêt à facturer pour de vrai, démarrez la facturation réelle : la purge ne sera alors plus possible.
+              L'application est en <span className="text-amber-400 font-semibold">mode test</span> : vous pouvez purger toutes les données d'essai
+              ({invoicingStatus.testDataCount} éléments actuellement : factures et avoirs, achats, lots, pierres, bijoux, mouvements de stock
+              et éléments de test de la Corbeille). Vos clients et fournisseurs, vos paramètres et le stock importé d'Access sont conservés.
+              Quand vos coordonnées sont à jour et que vous êtes prêt à facturer pour de vrai, démarrez la facturation réelle : la purge ne sera alors plus possible.
             </p>
             {pendingAction === null && (
               <div className="flex flex-wrap gap-2">
                 <button
                   id="btn-purge-test-invoices"
                   type="button"
-                  disabled={invoicingStatus.invoiceCount === 0}
+                  disabled={invoicingStatus.testDataCount === 0}
                   onClick={() => setPendingAction('purge')}
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  Purger les factures de test
+                  Purger les données de test
                 </button>
                 <button
                   id="btn-start-live-invoicing"
@@ -345,8 +346,9 @@ export default function SettingsManager({ settings, onSaveSettings, priceGuide =
             {pendingAction === 'purge' && (
               <div id="purge-confirm" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 space-y-2">
                 <p className="text-xs text-red-300 leading-relaxed">
-                  Supprimer définitivement les {invoicingStatus.invoiceCount} factures (corbeille comprise) ? Cette action est irréversible.
-                  Le stock n'est pas modifié : les pierres déjà marquées « Vendu » le restent.
+                  Supprimer définitivement les {invoicingStatus.testDataCount} éléments de test (factures et avoirs, achats, lots, pierres, bijoux, mouvements de stock,
+                  éléments de test de la Corbeille) ? Cette action est irréversible. Vos clients et fournisseurs, vos paramètres et le stock importé d'Access sont conservés,
+                  et la numérotation des factures repart de zéro.
                 </p>
                 <div className="flex gap-2">
                   <button

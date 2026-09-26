@@ -196,8 +196,9 @@ export default function App() {
 
   const handlePurgeTestInvoices = async (): Promise<boolean> => {
     if (!(await callApi('/api/invoicing/purge-tests', 'POST', {}))) return false;
-    const invList = await fetch('/api/sales-invoices').then(r => r.json());
-    setInvoices(invList);
+    // la purge touche tout le transactionnel : on recharge tout et on referme les fiches ouvertes
+    setSelectedGem(null);
+    await loadAllData();
     await refreshInvoicingStatus();
     return true;
   };
