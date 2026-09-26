@@ -77,9 +77,9 @@ export default function ContactManager({
   const [activeSubTab, setActiveSubTab] = useState<'clients' | 'suppliers'>('clients');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Pagination (10 / 25 / 50 par page) : la taille choisie est mémorisée sur ce poste
+  // Pagination (10 par défaut, ou 25 / 50 par page) : la taille choisie est mémorisée sur ce poste
   const [pageSize, setPageSize] = useState<number>(() => {
-    try { const v = Number(localStorage.getItem('contacts.pageSize')); return PAGE_SIZES.includes(v) ? v : 25; } catch { return 25; }
+    try { const v = Number(localStorage.getItem('contacts.pageSize')); return PAGE_SIZES.includes(v) ? v : 10; } catch { return 10; }
   });
   const [page, setPage] = useState(1);
   useEffect(() => { setPage(1); }, [searchTerm, activeSubTab, pageSize]);
@@ -449,7 +449,6 @@ export default function ContactManager({
                             <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-blue-500"></span>
                             <div>
                               <span>{client.name}</span>
-                              <span className="text-[9px] font-mono text-gray-500 block">{client.id}</span>
                             </div>
                           </div>
                         </td>
@@ -555,7 +554,6 @@ export default function ContactManager({
                             <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-sky-500"></span>
                             <div>
                               <span>{supplier.name}</span>
-                              <span className="text-[9px] font-mono text-gray-500 block">{supplier.id}</span>
                             </div>
                           </div>
                         </td>
