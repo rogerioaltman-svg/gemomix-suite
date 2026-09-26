@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Supplier, Client } from '../types';
 import ClientFormModal from './ClientFormModal';
@@ -33,6 +33,39 @@ interface ContactManagerProps {
   onDeleteClient: (id: string) => Promise<void> | void;
 }
 
+const PAGE_SIZES = [10, 25, 50];
+
+// Barre de pagination sous chaque tableau : position, page précédente / suivante, taille de page
+function PaginationBar({ total, page, pageSize, onPage, onPageSize }: {
+  total: number; page: number; pageSize: number; onPage: (p: number) => void; onPageSize: (n: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  const btn = 'px-2.5 py-1 rounded border border-[#2c3a55] bg-[#1a2336] hover:bg-[#202c44] text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer';
+  return (
+    <div id="contacts-pagination" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-[#1c273a] text-xs text-gray-400">
+      <span>{from}–{to} sur {total}</span>
+      <div className="flex items-center gap-2">
+        <button id="contacts-page-prev" type="button" disabled={page <= 1} onClick={() => onPage(page - 1)} className={btn}>Précédent</button>
+        <span>Page {page} / {totalPages}</span>
+        <button id="contacts-page-next" type="button" disabled={page >= totalPages} onClick={() => onPage(page + 1)} className={btn}>Suivant</button>
+      </div>
+      <label className="flex items-center gap-2">
+        <span>Afficher</span>
+        <select
+          id="contacts-page-size"
+          value={pageSize}
+          onChange={(e) => onPageSize(Number(e.target.value))}
+          className="px-2 py-1 rounded border border-[#2c3a55] bg-[#1a2336] text-gray-200 cursor-pointer"
+        >
+          {PAGE_SIZES.map(n => <option key={n} value={n}>{n} / page</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
 export default function ContactManager({
   suppliers,
   clients,
@@ -43,6 +76,17 @@ export default function ContactManager({
 }: ContactManagerProps) {
   const [activeSubTab, setActiveSubTab] = useState<'clients' | 'suppliers'>('clients');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Pagination (10 / 25 / 50 par page) : la taille choisie est mémorisée sur ce poste
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem('contacts.pageSize')); return PAGE_SIZES.includes(v) ? v : 25; } catch { return 25; }
+  });
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [searchTerm, activeSubTab, pageSize]);
+  const changePageSize = (n: number) => {
+    setPageSize(n);
+    try { localStorage.setItem('contacts.pageSize', String(n)); } catch { /* stockage indisponible : sans conséquence */ }
+  };
   
   // Modals
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
@@ -282,7 +326,7 @@ export default function ContactManager({
       (c.city && c.city.toLowerCase().includes(q)) ||
       (c.phone && c.phone.includes(q))
     );
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
 
   const filteredSuppliers = suppliers.filter(s => {
     const q = searchTerm.toLowerCase();
@@ -293,7 +337,14 @@ export default function ContactManager({
       (s.city && s.city.toLowerCase().includes(q)) ||
       (s.phone && s.phone.includes(q))
     );
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }));
+
+  // Page affichée (ramenée à la dernière page existante si la liste raccourcit)
+  const pageOf = (n: number) => Math.min(page, Math.max(1, Math.ceil(n / pageSize)));
+  const clientPage = pageOf(filteredClients.length);
+  const supplierPage = pageOf(filteredSuppliers.length);
+  const pagedClients = filteredClients.slice((clientPage - 1) * pageSize, clientPage * pageSize);
+  const pagedSuppliers = filteredSuppliers.slice((supplierPage - 1) * pageSize, supplierPage * pageSize);
 
   return (
     <div className="space-y-6">
@@ -376,12 +427,13 @@ export default function ContactManager({
                 </button>
               </div>
             ) : (
+              <>
               <div className="overflow-x-auto min-w-0">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-[#0b0e17] border-b border-[#1c273a] text-gray-400 font-mono text-[9px] uppercase tracking-wider">
                       <th className="py-3 px-4">Raison Sociale / Nom</th>
-                      <th className="py-3 px-4">Contact Humain</th>
+                      <th className="py-3 px-4">Contact</th>
                       <th className="py-3 px-4">Coordonnées</th>
                       <th className="py-3 px-4">Adresse & Bureau</th>
                       <th className="py-3 px-4">TVA / Régistration</th>
@@ -390,11 +442,11 @@ export default function ContactManager({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#182235]">
-                    {filteredClients.map((client) => (
+                    {pagedClients.map((client) => (
                       <tr key={client.id} className="hover:bg-[#151d2e]/40 transition-colors">
                         <td className="py-3 px-4 font-semibold text-white">
                           <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                            <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-blue-500"></span>
                             <div>
                               <span>{client.name}</span>
                               <span className="text-[9px] font-mono text-gray-500 block">{client.id}</span>
@@ -461,6 +513,8 @@ export default function ContactManager({
                   </tbody>
                 </table>
               </div>
+              <PaginationBar total={filteredClients.length} page={clientPage} pageSize={pageSize} onPage={setPage} onPageSize={changePageSize} />
+              </>
             )}
           </div>
         ) : (
@@ -479,6 +533,7 @@ export default function ContactManager({
                 </button>
               </div>
             ) : (
+              <>
               <div className="overflow-x-auto min-w-0">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
@@ -493,11 +548,11 @@ export default function ContactManager({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#182235]">
-                    {filteredSuppliers.map((supplier) => (
+                    {pagedSuppliers.map((supplier) => (
                       <tr key={supplier.id} className="hover:bg-[#151d2e]/40 transition-colors">
                         <td className="py-3 px-4 font-semibold text-white">
                           <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                            <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-sky-500"></span>
                             <div>
                               <span>{supplier.name}</span>
                               <span className="text-[9px] font-mono text-gray-500 block">{supplier.id}</span>
@@ -564,6 +619,8 @@ export default function ContactManager({
                   </tbody>
                 </table>
               </div>
+              <PaginationBar total={filteredSuppliers.length} page={supplierPage} pageSize={pageSize} onPage={setPage} onPageSize={changePageSize} />
+              </>
             )}
           </div>
         )}
