@@ -171,6 +171,8 @@ export default function PurchaseManager({
   const [supplierRef, setSupplierRef] = useState('');
   const [noSupplierInvoice, setNoSupplierInvoice] = useState(false);
   const [tempArticles, setTempArticles] = useState<Omit<PurchaseArticle, 'id'>[]>([]);
+  // Ligne du bordereau en cours de modification (null = on ajoute une nouvelle ligne)
+  const [editingArtIdx, setEditingArtIdx] = useState<number | null>(null);
 
   // States for adding a Single Article inside the temp purchase form
   const [artName, setArtName] = useState('');
@@ -243,9 +245,7 @@ export default function PurchaseManager({
     }
     clearError('articles');
 
-    setTempArticles([
-      ...tempArticles,
-      {
+    const built = {
         name: artName,
         gemstoneType: artType,
         weight: weightNum,
@@ -256,8 +256,15 @@ export default function PurchaseManager({
         ...(artDirectEntry && (artStoneCut.trim() || artStoneColor.trim() || artStoneClarity.trim() || artStoneImage)
           ? { stoneDetails: { cut: artStoneCut.trim(), color: artStoneColor.trim(), clarity: artStoneClarity.trim(), image: artStoneImage || undefined } }
           : {})
-      }
-    ]);
+    };
+
+    if (editingArtIdx !== null) {
+      // Mise à jour de la ligne : on garde son identifiant s'il existe déjà
+      setTempArticles(tempArticles.map((a, i) => (i === editingArtIdx ? { ...built, ...(a as any).id ? { id: (a as any).id } : {} } : a)));
+      setEditingArtIdx(null);
+    } else {
+      setTempArticles([...tempArticles, built]);
+    }
 
     // Reset article form fields
     setArtName('');
@@ -269,6 +276,41 @@ export default function PurchaseManager({
 
   const handleRemoveTempArticle = (idx: number) => {
     setTempArticles(tempArticles.filter((_, i) => i !== idx));
+    if (editingArtIdx !== null) {
+      if (idx === editingArtIdx) cancelEditTempArticle();
+      else if (idx < editingArtIdx) setEditingArtIdx(editingArtIdx - 1);
+    }
+  };
+
+  // Recharge une ligne du bordereau dans le formulaire d'article pour la corriger.
+  // Réservé aux lignes non encore enregistrées : une ligne déjà enregistrée peut avoir des lots triés
+  // ou une pierre en stock, qu'on ne modifie pas silencieusement depuis le bordereau.
+  const handleEditTempArticle = (idx: number) => {
+    const art: any = tempArticles[idx];
+    if (!art || art.id) return;
+    setArtName(art.name);
+    setArtType(art.gemstoneType);
+    setArtWeight(String(art.weight));
+    setArtCaratPrice(String(art.caratPrice));
+    setArtNotes(art.notes || '');
+    setArtDirectEntry(art.entryMode === 'stock');
+    setShowStoneDetails(!!art.stoneDetails);
+    setArtStoneCut(art.stoneDetails?.cut || '');
+    setArtStoneColor(art.stoneDetails?.color || '');
+    setArtStoneClarity(art.stoneDetails?.clarity || '');
+    setArtStoneImage(art.stoneDetails?.image || '');
+    setEditingArtIdx(idx);
+    clearError('articles');
+    setTimeout(() => document.getElementById('art-name-input')?.focus(), 0);
+  };
+
+  const cancelEditTempArticle = () => {
+    setEditingArtIdx(null);
+    setArtName('');
+    setArtWeight('');
+    setArtCaratPrice('');
+    setArtNotes('');
+    resetStoneDraft();
   };
 
   // Save full purchase
@@ -315,6 +357,7 @@ export default function PurchaseManager({
     setSupplier('');
     setPNotes('');
     setTempArticles([]);
+    setEditingArtIdx(null);
     setIsAddingPurchase(false);
     setEditingPurchaseId(null);
     setFormErrors({});
@@ -945,6 +988,7 @@ export default function PurchaseManager({
     resetStoneDraft();
                 setPNotes('');
                 setTempArticles([]);
+                setEditingArtIdx(null);
                 setFormErrors({});
               }}
               className="text-xs font-mono font-bold text-gray-400 hover:text-white bg-gray-800 px-3 py-1.5 rounded transition-all"
@@ -1236,8 +1280,18 @@ export default function PurchaseManager({
                 className="px-6 py-2 bg-gray-800 hover:bg-gray-750 text-yellow-500 font-mono font-bold hover:text-yellow-400 rounded border border-gray-700 flex items-center justify-center gap-1 transition-colors shrink-0"
               >
                 <Plus className="h-4.5 w-4.5" />
-                <span>Ajouter{artDirectEntry ? ' la pierre' : " l'article"}</span>
+                <span>{editingArtIdx !== null ? 'Mettre à jour' : 'Ajouter'}{artDirectEntry ? ' la pierre' : " l'article"}</span>
               </button>
+              {editingArtIdx !== null && (
+                <button
+                  id="btn-cancel-edit-subart"
+                  type="button"
+                  onClick={cancelEditTempArticle}
+                  className="px-4 py-2 bg-transparent hover:bg-gray-800 text-gray-300 rounded border border-gray-700 text-xs shrink-0"
+                >
+                  Annuler la modification
+                </button>
+              )}
             </div>
 
             {/* List of currently created temp articles */}
@@ -1246,7 +1300,7 @@ export default function PurchaseManager({
                 <span className="text-[10px] font-mono uppercase text-gray-500 block mb-2">Bordereau temporaire des articles saisis :</span>
                 <div className="space-y-2">
                   {tempArticles.map((art, idx) => (
-                    <div key={idx} className="flex justify-between items-center bg-black/30 p-2.5 rounded-lg border border-gray-800 font-mono text-xs text-gray-300">
+                    <div key={idx} className={`flex justify-between items-center bg-black/30 p-2.5 rounded-lg border font-mono text-xs text-gray-300 ${editingArtIdx === idx ? 'border-amber-500/60' : 'border-gray-800'}`}>
                       <div>
                         <span className="font-bold text-white font-sans text-sm">{art.name}</span>
                         <span className={`ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border ${art.entryMode === 'stock' ? 'bg-[#bda165]/10 text-[#e0b760] border-[#bda165]/30' : 'bg-sky-500/10 text-sky-400 border-sky-500/20'}`}>
@@ -1266,7 +1320,18 @@ export default function PurchaseManager({
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="text-[#eedfa7] font-bold text-sm">{(art.weight * art.caratPrice).toLocaleString()} €</span>
-                        <button 
+                        {!(art as any).id && (
+                          <button
+                            id={`btn-edit-tempart-${idx}`}
+                            type="button"
+                            onClick={() => handleEditTempArticle(idx)}
+                            title="Modifier cette ligne"
+                            className="p-1 hover:bg-amber-500/10 text-amber-400 rounded"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <button
                           id={`btn-remove-tempart-${idx}`}
                           type="button"
                           onClick={() => handleRemoveTempArticle(idx)}
@@ -1307,6 +1372,7 @@ export default function PurchaseManager({
     resetStoneDraft();
                 setPNotes('');
                 setTempArticles([]);
+                setEditingArtIdx(null);
                 setFormErrors({});
               }}
               className="px-5 py-2.5 bg-transparent hover:bg-gray-800 text-gray-300 rounded-lg text-xs font-semibold"
