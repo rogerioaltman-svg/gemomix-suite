@@ -182,6 +182,7 @@ function getConnection(): Database.Database {
   ensureSourceColumns(db);
   ensureDeletedAtColumns(db);
   ensureSupplierReferenceColumn(db);
+  ensureDeletionLogTable(db);
   ensureInvoiceSnapshotColumns(db);
   ensureSupplierPostalCodeColumn(db);
   ensurePurchaseDocumentsTable(db);
@@ -272,6 +273,11 @@ function ensureAppSecretsTable(conn: Database.Database) {
 // Petits indicateurs de l'application (ex. : la facturation réelle a démarré)
 function ensureAppFlagsTable(conn: Database.Database) {
   conn.exec('CREATE TABLE IF NOT EXISTS app_flags (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
+}
+
+// Journal des suppressions définitives (trace : pourquoi une référence manque)
+function ensureDeletionLogTable(conn: Database.Database) {
+  conn.exec('CREATE TABLE IF NOT EXISTS deletion_log (id INTEGER PRIMARY KEY AUTOINCREMENT, deleted_at TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, label TEXT NOT NULL, detail TEXT, archived_at TEXT);');
 }
 
 // Deux factures ne peuvent pas porter le même numéro (les brouillons n'en ont pas)
@@ -999,7 +1005,7 @@ export async function correctSoldGemstone(id: string, field: string, rawValue: u
     }
     if (def.fromPurchase && (row as any).source_purchase_id) {
       const src = conn.prepare('SELECT reference FROM purchases WHERE id = ?').get((row as any).source_purchase_id) as { reference: string } | undefined;
-      throw new InvoiceLockedError(`Cette donnée provient de l'achat ${src?.reference ?? ''} : modifiez-la dans « Achats & Lots », la fiche de la pierre suivra.`);
+      throw new InvoiceLockedError(`Cette donnée provient de l'achat ${src?.reference ?? ''} : modifiez-la dans « Achats », la fiche de la pierre suivra.`);
     }
     const why = String(reason ?? '').trim();
     if (why.length < 3) throw new InvoiceLockedError('Le motif de la correction est obligatoire.');
@@ -1903,7 +1909,10 @@ export async function saveCompanySettings(settings: CompanySettings): Promise<vo
    ========================================================================== */
 
 export async function getTrash(): Promise<TrashItem[]> {
-  const conn = getConnection();
+  return getTrashSync(getConnection());
+}
+
+function getTrashSync(conn: Database.Database): TrashItem[] {
   const items: TrashItem[] = [];
 
   (conn.prepare("SELECT * FROM gemstones WHERE deleted_at IS NOT NULL").all() as any[]).forEach(r => {
@@ -1931,7 +1940,110 @@ export async function getTrash(): Promise<TrashItem[]> {
     items.push({ type: 'bijou', id: r.id, label: `Bijou ${r.reference}`, detail: r.metal, deletedAt: r.deleted_at });
   });
 
+  for (const it of items) it.blocker = trashBlocker(conn, it) ?? undefined;
   return items.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+}
+
+/* --- Suppression définitive depuis la Corbeille ---------------------------------------------
+   Autorisée seulement si l'élément n'est lié à rien (facture, vente, achat, bijou…). Une fois la
+   facturation réelle démarrée, il faut en plus qu'il soit archivé depuis au moins 30 jours.
+   Chaque suppression est inscrite dans le journal deletion_log. */
+const TRASH_RETENTION_DAYS = 30;
+
+// Une facture (même à la Corbeille) cite-t-elle cet identifiant dans ses lignes ?
+function invoiceCiting(conn: Database.Database, id: string): string | null {
+  const r = conn.prepare('SELECT invoice_number FROM sales_invoices WHERE instr(items, ?) > 0 LIMIT 1').get(JSON.stringify(id)) as { invoice_number: string } | undefined;
+  return r ? (r.invoice_number ? `la facture ${r.invoice_number}` : 'une facture (brouillon)') : null;
+}
+
+function gemBlocker(conn: Database.Database, id: string): string | null {
+  const g = conn.prepare('SELECT status FROM gemstones WHERE id = ?').get(id) as { status: string } | undefined;
+  if (!g) return null;
+  if (g.status === 'Vendu') return 'pierre vendue : son historique doit être conservé';
+  const inv = invoiceCiting(conn, id);
+  if (inv) return `citée par ${inv}`;
+  if (conn.prepare("SELECT 1 FROM stock_movements WHERE entity_type = 'gemstone' AND entity_id = ? AND type = 'VENTE' LIMIT 1").get(id)) return 'elle a un mouvement de vente';
+  const bj = conn.prepare('SELECT reference FROM bijoux WHERE instr(gemstone_ids, ?) > 0 LIMIT 1').get(JSON.stringify(id)) as { reference: string } | undefined;
+  if (bj) return `sertie dans le bijou ${bj.reference}`;
+  return null;
+}
+
+function lotBlocker(conn: Database.Database, id: string): string | null {
+  const inv = invoiceCiting(conn, id);
+  if (inv) return `cité par ${inv}`;
+  if (conn.prepare("SELECT 1 FROM stock_movements WHERE entity_type = 'lot' AND entity_id = ? AND type = 'VENTE' LIMIT 1").get(id)) return 'il a un mouvement de vente';
+  return null;
+}
+
+function trashBlocker(conn: Database.Database, it: TrashItem): string | null {
+  if (conn.prepare("SELECT 1 FROM app_flags WHERE key = 'invoicing_live_since'").get()) {
+    const ageDays = (Date.now() - new Date(it.deletedAt).getTime()) / 86400000;
+    if (ageDays < TRASH_RETENTION_DAYS) return `facturation réelle en cours : possible ${TRASH_RETENTION_DAYS} jours après l'archivage`;
+  }
+  switch (it.type) {
+    case 'gemstone': return gemBlocker(conn, it.id);
+    case 'lot': return lotBlocker(conn, it.id);
+    case 'purchase': {
+      const activeLot = conn.prepare('SELECT reference FROM lots WHERE purchase_id = ? AND deleted_at IS NULL LIMIT 1').get(it.id) as { reference: string } | undefined;
+      if (activeLot) return `le lot ${activeLot.reference} en dépend encore (archivez-le d'abord)`;
+      const activeGem = conn.prepare('SELECT reference FROM gemstones WHERE source_purchase_id = ? AND deleted_at IS NULL LIMIT 1').get(it.id) as { reference: string } | undefined;
+      if (activeGem) return `la pierre ${activeGem.reference} en dépend encore (archivez-la d'abord)`;
+      for (const l of conn.prepare('SELECT id FROM lots WHERE purchase_id = ?').all(it.id) as { id: string }[]) { const b = lotBlocker(conn, l.id); if (b) return b; }
+      for (const g of conn.prepare('SELECT id FROM gemstones WHERE source_purchase_id = ?').all(it.id) as { id: string }[]) { const b = gemBlocker(conn, g.id); if (b) return b; }
+      return null;
+    }
+    case 'supplier': {
+      const p = conn.prepare('SELECT reference FROM purchases WHERE lower(supplier) = lower(?) LIMIT 1').get(it.label) as { reference: string } | undefined;
+      return p ? `utilisé par l'achat ${p.reference}` : null;
+    }
+    case 'client': {
+      const f = conn.prepare('SELECT invoice_number FROM sales_invoices WHERE client_id = ? LIMIT 1').get(it.id) as { invoice_number: string } | undefined;
+      return f ? (f.invoice_number ? `utilisé par la facture ${f.invoice_number}` : 'utilisé par une facture (brouillon)') : null;
+    }
+    case 'salesInvoice': {
+      const f = conn.prepare('SELECT status FROM sales_invoices WHERE id = ?').get(it.id) as { status: string } | undefined;
+      return f && f.status !== 'Brouillon' ? 'facture émise : jamais supprimable (corrigez par un avoir)' : null;
+    }
+    case 'bijou': {
+      const b = conn.prepare('SELECT status FROM bijoux WHERE id = ?').get(it.id) as { status: string } | undefined;
+      if (b?.status === 'Vendu') return 'bijou vendu : son historique doit être conservé';
+      return invoiceCiting(conn, it.id) ? 'cité par une facture' : null;
+    }
+    default: return null;
+  }
+}
+
+export async function deleteTrashItemPermanently(type: TrashEntityType, id: string): Promise<void> {
+  const conn = getConnection();
+  const files: string[] = [];
+  const run = conn.transaction(() => {
+    const item = getTrashSync(conn).find(i => i.type === type && i.id === id);
+    if (!item) throw new Error("Cet élément n'est pas (ou plus) dans la Corbeille.");
+    if (item.blocker) throw new InvoiceLockedError(`Suppression définitive impossible : ${item.blocker}.`);
+    const purgeMovements = (entityType: 'gemstone' | 'lot', eid: string) => conn.prepare('DELETE FROM stock_movements WHERE entity_type = ? AND entity_id = ?').run(entityType, eid);
+    switch (type) {
+      case 'gemstone': purgeMovements('gemstone', id); conn.prepare('DELETE FROM gemstones WHERE id = ?').run(id); break;
+      case 'lot': purgeMovements('lot', id); conn.prepare('DELETE FROM lots WHERE id = ?').run(id); break;
+      case 'purchase':
+        for (const l of conn.prepare('SELECT id FROM lots WHERE purchase_id = ?').all(id) as { id: string }[]) purgeMovements('lot', l.id);
+        files.push(...(conn.prepare('SELECT stored_name FROM purchase_documents WHERE purchase_id = ?').all(id) as { stored_name: string }[]).map(x => x.stored_name));
+        conn.prepare('DELETE FROM purchase_documents WHERE purchase_id = ?').run(id);
+        conn.prepare('DELETE FROM lots WHERE purchase_id = ?').run(id);
+        conn.prepare('DELETE FROM purchases WHERE id = ?').run(id);
+        break;
+      case 'supplier': conn.prepare('DELETE FROM suppliers WHERE id = ?').run(id); break;
+      case 'client': conn.prepare('DELETE FROM clients WHERE id = ?').run(id); break;
+      case 'salesInvoice': conn.prepare('DELETE FROM sales_invoices WHERE id = ?').run(id); break;
+      case 'priceGuideEntry': conn.prepare('DELETE FROM price_guide WHERE id = ?').run(id); break;
+      case 'bijou': conn.prepare('DELETE FROM bijoux WHERE id = ?').run(id); break;
+      default: throw new Error(`Type d'élément inconnu : ${type}`);
+    }
+    conn.prepare('INSERT INTO deletion_log (deleted_at, entity_type, entity_id, label, detail, archived_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(new Date().toISOString(), type, id, item.label, item.detail ?? null, item.deletedAt);
+    if ((conn.pragma('foreign_key_check') as unknown[]).length) throw new Error('Suppression annulée : violation de clés étrangères.');
+  });
+  run();
+  for (const f of files) fs.rmSync(path.join(DOCUMENTS_DIR, f), { force: true });
 }
 
 const TRASH_RESTORE_HANDLERS: Record<TrashEntityType, (id: string) => Promise<void>> = {

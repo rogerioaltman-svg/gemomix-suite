@@ -22,7 +22,7 @@ import {
   getAiSettings, saveAiSettings, getAiApiKey, findPurchaseByInvoice, cleanupOrphanDocuments,
   getCompanySettings, saveCompanySettings,
   getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
-  getTrash, restoreTrashItem,
+  getTrash, restoreTrashItem, deleteTrashItemPermanently,
   getMovementsForEntity,
   getAllBijoux, saveBijou, deleteBijou, decomposeBijou
 } from './src/server_db';
@@ -587,6 +587,17 @@ app.post('/api/trash/:type/:id/restore', async (req, res) => {
   } catch (error: any) {
     console.error("Error restoring trash item:", error);
     res.status(500).json({ error: "Erreur lors de la restauration de l'élément." });
+  }
+});
+
+app.delete('/api/trash/:type/:id', async (req, res) => {
+  try {
+    await deleteTrashItemPermanently(req.params.type as TrashEntityType, req.params.id);
+    res.json({ success: true });
+  } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
+    console.error("Error deleting trash item:", error);
+    res.status(400).json({ error: error.message || "Erreur lors de la suppression définitive." });
   }
 });
 

@@ -29,6 +29,7 @@ export interface TrashItem {
   label: string; // ex: référence, nom, n° de facture...
   detail?: string; // ex: variété, fournisseur, montant...
   deletedAt: string;
+  blocker?: string; // raison pour laquelle la suppression définitive est impossible (absent = possible)
 }
 
 export interface Gemstone {
