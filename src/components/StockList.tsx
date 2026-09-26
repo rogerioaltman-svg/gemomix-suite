@@ -77,7 +77,8 @@ export default function StockList({
       criteriaColor: string;
       criteriaClarity: string;
       treatment: string;
-      origin: string;
+      origin: string; // pays d'extraction (Birmanie, Colombie…) — jamais le fournisseur
+      supplier: string; // fournisseur (négociant) : notion distincte de l'origine
       certificate: string; // pierres : labo + n° ; vide sinon
       location: string; // pierre : emplacement ; lot : rangement
       sourceNote?: string; // colis brut : rappel de l'achat d'origine
@@ -101,6 +102,7 @@ export default function StockList({
         criteriaClarity: g.clarity,
         treatment: g.treatment,
         origin: g.origin,
+        supplier: g.dealer || '',
         certificate: g.certificate.authority !== 'Sans' ? (g.certificate.number ? `${g.certificate.authority} ${g.certificate.number}` : g.certificate.authority) : '',
         location: g.location || '',
         cost: g.costPrice,
@@ -116,7 +118,8 @@ export default function StockList({
       const parentPurchase = purchases.find(p => p.id === l.purchaseId);
       const article = parentPurchase?.articles.find(a => a.id === l.purchaseArticleId);
       const costPrice = article ? l.weight * article.caratPrice : 0;
-      const sellingPrice = costPrice * 1.5; // Commercial markup estimate
+      // Aucun prix de vente n'est défini pour un lot : on n'invente pas de revente ("Non estimée")
+      const sellingPrice = 0;
 
       // Deduce geographic origin from raw purchase notes/supplier
       const deducedOrigin = (() => {
@@ -127,7 +130,7 @@ export default function StockList({
         if (combinedNotes.includes('colomb')) return 'Colombie';
         if (combinedNotes.includes('thaïlande') || combinedNotes.includes('thailand') || combinedNotes.includes('chanthaburi')) return 'Thaïlande';
         if (combinedNotes.includes('tanzan')) return 'Tanzanie';
-        return parentPurchase?.supplier ? parentPurchase.supplier : 'Facture internationale';
+        return ''; // origine géographique inconnue : la colonne affiche « — » (le fournisseur a sa propre colonne)
       })();
 
       list.push({
@@ -141,6 +144,7 @@ export default function StockList({
         criteriaClarity: l.averageClarity || 'N/A',
         treatment: 'Colis de Brut trié',
         origin: deducedOrigin,
+        supplier: parentPurchase?.supplier || '',
         certificate: '',
         location: l.destination || '',
         cost: costPrice,
@@ -163,7 +167,7 @@ export default function StockList({
           
           if (remainingWeight > 0.01) {
             const costPrice = remainingWeight * art.caratPrice;
-            const sellingPrice = costPrice * 1.5;
+            const sellingPrice = 0; // pas de prix de vente défini pour un colis : "Non estimée"
             
             list.push({
               id: art.id,
@@ -175,7 +179,8 @@ export default function StockList({
               criteriaColor: 'Brut non trié',
               criteriaClarity: 'Inconnue',
               treatment: 'Non traité',
-              origin: p.supplier,
+              origin: '',
+              supplier: p.supplier || '',
               certificate: '',
               location: '',
               sourceNote: `Achat ${p.reference}`,
@@ -207,6 +212,7 @@ export default function StockList({
         item.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.variety.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.origin.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.certificate.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -414,6 +420,7 @@ export default function StockList({
                 <th className="py-3 px-3 whitespace-nowrap">Taille</th>
                 <th className="py-3 px-3 whitespace-nowrap">Couleur / Pureté</th>
                 <th className="py-3 px-3 whitespace-nowrap">Origine</th>
+                <th className="py-3 px-3 whitespace-nowrap">Fournisseur</th>
                 <th className="py-3 px-3 whitespace-nowrap">Certificat</th>
                 <th className="py-3 px-3 whitespace-nowrap">Emplacement</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">Revente / Achat</th>
@@ -499,8 +506,13 @@ export default function StockList({
 
                     {/* Geographic Origin */}
                     <td className="py-3.5 px-3">
-                      <div className="text-gray-200 font-semibold">{item.origin}</div>
+                      <div className="text-gray-200 font-semibold">{item.origin || <span className="text-gray-600 font-normal">—</span>}</div>
                       <span className="text-amber-500 text-[10px] font-mono">{item.treatment}</span>
+                    </td>
+
+                    {/* Fournisseur (négociant) : distinct de l'origine géographique */}
+                    <td className="py-3.5 px-3 text-[11px] text-gray-300 max-w-[11rem]">
+                      {item.supplier || <span className="text-gray-600">—</span>}
                     </td>
 
                     {/* Certificat (pierres uniquement) */}
@@ -522,7 +534,7 @@ export default function StockList({
                       ) : (
                         <div className="text-gray-500 italic font-sans font-normal text-[10px]">Non estimée</div>
                       )}
-                      <div className="text-[10px] text-gray-500 mt-0.5" title={(item.type === 'lot' || item.type === 'purchase_article') && item.value > 0 ? 'Revente estimée = marge brute estimée' : undefined}>
+                      <div className="text-[10px] text-gray-500 mt-0.5" >
                         achat {item.cost > 0 ? `${Math.round(item.cost).toLocaleString('fr-FR')} €` : '—'}
                       </div>
                     </td>
