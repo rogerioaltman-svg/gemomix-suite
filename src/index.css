@@ -541,3 +541,10 @@ form[data-sold-locked] textarea:disabled {
   -webkit-text-fill-color: #7d8794;
   cursor: not-allowed;
 }
+
+/* Nuances claires de texte coloré (ambre, violet, rouge, vert) : illisibles sur fond clair sans ces corrections */
+.light-theme .text-amber-100, .light-theme .text-amber-200, .light-theme .text-amber-300 { color: #92400e !important; }
+.light-theme .text-amber-500 { color: #b45309 !important; }
+.light-theme .text-violet-100, .light-theme .text-violet-200, .light-theme .text-violet-300 { color: #5b21b6 !important; }
+.light-theme .text-red-200, .light-theme .text-red-300 { color: #b91c1c !important; }
+.light-theme .text-emerald-100, .light-theme .text-emerald-200, .light-theme .text-emerald-300 { color: #047857 !important; }

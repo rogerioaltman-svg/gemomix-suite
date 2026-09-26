@@ -673,6 +673,7 @@ export default function App() {
             onDeleteLot={handleDeleteLot}
             suppliers={suppliers}
             onSaveSupplier={handleSaveSupplier}
+            onOpenSettings={() => setSelectedTab('settings')}
             onOpenGem={(gem) => openGemForm(gem)}
             autoOpenNewPurchase={autoOpenPurchase}
             onAutoOpenHandled={() => setAutoOpenPurchase(false)}

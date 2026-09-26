@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
+import AiSettingsSection from './AiSettingsSection';
 import { CompanySettings, PriceGuideEntry, InvoicingStatus } from '../types';
 import { Settings, Save, MapPin, Phone, Mail, Building2, Globe, CheckCircle, Database, Gem, Pencil, Trash2, Plus, X } from 'lucide-react';
 
@@ -390,6 +391,8 @@ export default function SettingsManager({ settings, onSaveSettings, priceGuide =
         )}
       </div>
       )}
+
+      <AiSettingsSection />
 
       <div className="bg-[#121620] border border-[#212a3d] rounded-2xl p-6 sm:p-8 shadow-xl" id="price-guide-section">
         <div className="flex items-center gap-3 mb-6 border-b border-[#212a3d] pb-6">

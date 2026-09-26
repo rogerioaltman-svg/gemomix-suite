@@ -8,7 +8,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { SEED_GEMSTONES, SEED_PURCHASES, SEED_LOTS } from './data';
-import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot, InvoicingStatus, PurchaseDocument } from './types';
+import { AI_PROVIDERS } from './invoice_ai';
+import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot, InvoicingStatus, PurchaseDocument, AiProvider, AiSettingsPublic } from './types';
 
 export const DB_FILE_PATH = path.join(process.cwd(), 'gemophy.db');
 // Ancienne base JSON (générée par la version AI Studio) : importée puis archivée au premier lancement
@@ -184,6 +185,7 @@ function getConnection(): Database.Database {
   ensureInvoiceSnapshotColumns(db);
   ensureSupplierPostalCodeColumn(db);
   ensurePurchaseDocumentsTable(db);
+  ensureAppSecretsTable(db);
   ensureAppFlagsTable(db);
   ensureInvoiceNumberUniqueIndex(db);
   bootstrapIfEmpty(db);
@@ -260,6 +262,11 @@ function ensurePurchaseDocumentsTable(conn: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_purchase_documents_purchase ON purchase_documents(purchase_id);
     CREATE INDEX IF NOT EXISTS idx_purchase_documents_sha ON purchase_documents(sha256);
   `);
+}
+
+// Clés d'API (lecture automatique des factures) : stockées sur ce poste, jamais renvoyées au navigateur
+function ensureAppSecretsTable(conn: Database.Database) {
+  conn.exec('CREATE TABLE IF NOT EXISTS app_secrets (key TEXT PRIMARY KEY, value TEXT NOT NULL);');
 }
 
 // Petits indicateurs de l'application (ex. : la facturation réelle a démarré)
@@ -1120,6 +1127,19 @@ export async function deleteOrphanDocument(id: string): Promise<void> {
   fs.rmSync(path.join(DOCUMENTS_DIR, r.stored_name), { force: true });
 }
 
+// Envois jamais rattachés à un achat (formulaire quitté sans le fermer, onglet fermé...) : retirés au bout d'un délai.
+// Un document rattaché à un achat n'est jamais touché.
+export function cleanupOrphanDocuments(maxAgeHours = 24): number {
+  const conn = getConnection();
+  const limit = new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString();
+  const rows = conn.prepare('SELECT id, stored_name FROM purchase_documents WHERE purchase_id IS NULL AND created_at < ?').all(limit) as { id: string; stored_name: string }[];
+  for (const r of rows) {
+    conn.prepare('DELETE FROM purchase_documents WHERE id = ? AND purchase_id IS NULL').run(r.id);
+    fs.rmSync(path.join(DOCUMENTS_DIR, r.stored_name), { force: true });
+  }
+  return rows.length;
+}
+
 function linkDocuments(conn: Database.Database, purchaseId: string, ids: string[]) {
   const link = conn.prepare('UPDATE purchase_documents SET purchase_id = ? WHERE id = ? AND (purchase_id IS NULL OR purchase_id = ?)');
   for (const id of ids) link.run(purchaseId, id, purchaseId);
@@ -1598,6 +1618,64 @@ export async function createCreditNote(invoiceId: string, restock: boolean): Pro
     return credit;
   });
   return run();
+}
+
+/* ==========================================================================
+   Réglages de la lecture automatique des factures (service, modèle, clé)
+   ========================================================================== */
+const ENV_KEYS: Record<AiProvider, string> = { gemini: 'GEMINI_API_KEY', claude: 'ANTHROPIC_API_KEY' };
+
+function flag(conn: Database.Database, key: string): string | undefined {
+  return (conn.prepare('SELECT value FROM app_flags WHERE key = ?').get(key) as { value: string } | undefined)?.value;
+}
+
+// Clé effective d'un service : celle saisie dans Paramètres, sinon la variable d'environnement
+export function getAiApiKey(provider: AiProvider): { key: string; source: 'app' | 'env' } | null {
+  const conn = getConnection();
+  const stored = (conn.prepare('SELECT value FROM app_secrets WHERE key = ?').get(`ai_key_${provider}`) as { value: string } | undefined)?.value;
+  if (stored) return { key: stored, source: 'app' };
+  const env = process.env[ENV_KEYS[provider]];
+  return env ? { key: env, source: 'env' } : null;
+}
+
+export async function getAiSettings(): Promise<AiSettingsPublic> {
+  const conn = getConnection();
+  const provider = (flag(conn, 'ai_provider') === 'claude' ? 'claude' : 'gemini') as AiProvider;
+  const model = flag(conn, `ai_model_${provider}`) || AI_PROVIDERS[provider].defaultModel;
+  const k = getAiApiKey(provider);
+  return {
+    provider, model, configured: !!k, keySource: k?.source ?? null,
+    providers: (Object.keys(AI_PROVIDERS) as AiProvider[]).map(id => ({ id, label: AI_PROVIDERS[id].label, defaultModel: AI_PROVIDERS[id].defaultModel }))
+  };
+}
+
+export async function saveAiSettings(input: { provider?: unknown; model?: unknown; apiKey?: unknown; clearKey?: unknown }): Promise<AiSettingsPublic> {
+  const conn = getConnection();
+  if (input.provider !== 'gemini' && input.provider !== 'claude') throw new DocumentError('Service inconnu.');
+  const provider = input.provider as AiProvider;
+  const model = String(input.model ?? '').trim();
+  if (model && !/^[A-Za-z0-9._:\-]{2,100}$/.test(model)) throw new DocumentError('Nom de modèle invalide.');
+  const upsertFlag = conn.prepare('INSERT INTO app_flags (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+  upsertFlag.run('ai_provider', provider);
+  if (model) upsertFlag.run(`ai_model_${provider}`, model);
+  if (input.clearKey === true) {
+    conn.prepare('DELETE FROM app_secrets WHERE key = ?').run(`ai_key_${provider}`);
+  } else if (typeof input.apiKey === 'string' && input.apiKey.trim()) {
+    const key = input.apiKey.trim();
+    if (key.length > 400 || /\s/.test(key)) throw new DocumentError('Clé invalide (pas d\'espace, 400 caractères maximum).');
+    conn.prepare('INSERT INTO app_secrets (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(`ai_key_${provider}`, key);
+  }
+  return getAiSettings();
+}
+
+// Facture déjà saisie ? (même fournisseur et même numéro de facture fournisseur)
+export function findPurchaseByInvoice(supplierName: string | undefined, invoiceNumber: string | undefined): string | undefined {
+  if (!invoiceNumber) return undefined;
+  const conn = getConnection();
+  const rows = conn.prepare('SELECT reference, supplier FROM purchases WHERE deleted_at IS NULL AND lower(trim(supplier_reference)) = lower(trim(?))').all(invoiceNumber) as { reference: string; supplier: string }[];
+  const n = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
+  const hit = rows.find(r => !supplierName || n(r.supplier) === n(supplierName));
+  return hit?.reference;
 }
 
 export async function getInvoicingStatus(): Promise<InvoicingStatus> {

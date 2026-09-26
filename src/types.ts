@@ -128,6 +128,57 @@ export interface PurchaseDocument {
   duplicateOfPurchase?: string; // (réponse d'envoi) référence de l'achat qui porte déjà exactement ce fichier
 }
 
+// Lecture automatique d'une facture d'achat par un service d'intelligence artificielle
+export type AiProvider = 'gemini' | 'claude';
+
+export interface AiSettingsPublic {
+  provider: AiProvider;
+  model: string;
+  configured: boolean; // une clé est disponible pour le service choisi
+  keySource: 'app' | 'env' | null; // saisie dans Paramètres, ou variable d'environnement (développement)
+  providers: { id: AiProvider; label: string; defaultModel: string }[];
+  // la clé elle-même n'est JAMAIS renvoyée au navigateur
+}
+
+export interface ExtractedLine {
+  description: string;
+  kind?: 'pierre' | 'lot'; // pierre unique (entrée directe en stock) ou colis / lot à trier
+  quantity?: number; // nombre de pièces, si indiqué
+  cut?: string;
+  color?: string;
+  clarity?: string;
+  gemstoneType?: string;
+  weightCt?: number;
+  pricePerCt?: number;
+  amount?: number;
+  notes?: string;
+}
+
+export interface InvoiceExtraction {
+  supplier: { name?: string; vatNumber?: string; address?: string; postalCode?: string; city?: string; country?: string };
+  invoiceNumber?: string;
+  invoiceDate?: string; // AAAA-MM-JJ
+  currency?: string;
+  lines: ExtractedLine[];
+  totalExclTax?: number;
+  vatAmount?: number;
+  totalInclTax?: number;
+  notes?: string;
+}
+
+export interface ExtractionCheck {
+  level: 'warning' | 'error';
+  message: string;
+}
+
+export interface InvoiceExtractionResult {
+  extraction: InvoiceExtraction;
+  checks: ExtractionCheck[];
+  supplierMatch?: { id: string; name: string; how: string };
+  provider: AiProvider;
+  model: string;
+}
+
 export interface Purchase {
   id: string;
   reference: string; // numéro interne séquentiel (verrouillé) — racine des refs lots/pierres

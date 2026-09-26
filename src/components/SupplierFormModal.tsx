@@ -9,24 +9,26 @@ import { Briefcase, X } from 'lucide-react';
 
 interface SupplierFormModalProps {
   supplier: Supplier | null; // null = création
+  prefill?: Partial<Supplier>; // valeurs proposées à la création (ex. : lues sur une facture)
   // Retourne false si l'enregistrement a échoué : la fenêtre reste alors ouverte
   onSave: (supplier: Supplier) => Promise<boolean | void> | boolean | void;
   onClose: () => void;
 }
 
 // Fenêtre unique de saisie d'un fournisseur, partagée par l'annuaire, les achats et la fiche pierre
-export default function SupplierFormModal({ supplier, onSave, onClose }: SupplierFormModalProps) {
+export default function SupplierFormModal({ supplier, prefill, onSave, onClose }: SupplierFormModalProps) {
+  const init = { ...(prefill ?? {}), ...(supplier ?? {}) } as Partial<Supplier>;
   const [form, setForm] = useState({
-    name: supplier?.name || '',
-    contactName: supplier?.contactName || '',
-    email: supplier?.email || '',
-    phone: supplier?.phone || '',
-    address: supplier?.address || '',
-    postalCode: supplier?.postalCode || '',
-    city: supplier?.city || '',
-    country: supplier?.country || 'France',
-    vatNumber: supplier?.vatNumber || '',
-    notes: supplier?.notes || ''
+    name: init.name || '',
+    contactName: init.contactName || '',
+    email: init.email || '',
+    phone: init.phone || '',
+    address: init.address || '',
+    postalCode: init.postalCode || '',
+    city: init.city || '',
+    country: init.country || 'France',
+    vatNumber: init.vatNumber || '',
+    notes: init.notes || ''
   });
   const [saving, setSaving] = useState(false);
 

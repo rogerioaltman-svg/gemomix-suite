@@ -19,6 +19,7 @@ import {
   getAllSalesInvoices, saveSalesInvoice, deleteSalesInvoice, InvoiceLockedError,
   getInvoicingStatus, startLiveInvoicing, purgeTestData, createCreditNote, correctSoldGemstone,
   saveDocument, getDocumentFile, deleteOrphanDocument, DocumentError,
+  getAiSettings, saveAiSettings, getAiApiKey, findPurchaseByInvoice, cleanupOrphanDocuments,
   getCompanySettings, saveCompanySettings,
   getAllPriceGuideEntries, savePriceGuideEntry, deletePriceGuideEntry,
   getTrash, restoreTrashItem,
@@ -26,6 +27,7 @@ import {
   getAllBijoux, saveBijou, deleteBijou, decomposeBijou
 } from './src/server_db';
 import { TrashEntityType } from './src/types';
+import { extractInvoice, testConnection, listModels, AiError, AI_PROVIDERS } from './src/invoice_ai';
 
 dotenv.config();
 
@@ -140,6 +142,82 @@ app.get('/api/purchases', async (req, res) => {
   } catch (error: any) {
     console.error("Error fetching purchases:", error);
     res.status(500).json({ error: "Erreur lors de l'acquisition des factures d'achat." });
+  }
+});
+
+// --- Lecture automatique des factures d'achat (service d'IA, clé de l'utilisateur) ---
+// La clé n'est jamais renvoyée au navigateur : seuls « configurée » et sa provenance le sont.
+app.get('/api/ai-settings', async (req, res) => {
+  try {
+    res.json(await getAiSettings());
+  } catch (error: any) {
+    console.error("Error reading AI settings:", error);
+    res.status(500).json({ error: "Erreur de lecture des réglages." });
+  }
+});
+
+app.post('/api/ai-settings', async (req, res) => {
+  try {
+    res.json(await saveAiSettings(req.body ?? {}));
+  } catch (error: any) {
+    if (error instanceof DocumentError) return res.status(400).json({ error: error.message });
+    console.error("Error saving AI settings:", error);
+    res.status(500).json({ error: "Erreur d'enregistrement des réglages." });
+  }
+});
+
+// Teste la connexion avec les valeurs saisies (même non enregistrées), sinon avec celles enregistrées
+app.post('/api/ai-settings/test', async (req, res) => {
+  try {
+    const saved = await getAiSettings();
+    const provider = (req.body?.provider === 'claude' || req.body?.provider === 'gemini') ? req.body.provider : saved.provider;
+    const model = String(req.body?.model || '').trim() || (provider === saved.provider ? saved.model : AI_PROVIDERS[provider as 'gemini' | 'claude'].defaultModel);
+    const typed = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+    const key = typed || getAiApiKey(provider)?.key;
+    if (!key) return res.status(409).json({ ok: false, error: 'Aucune clé enregistrée pour ce service.' });
+    await testConnection(provider, model, key);
+    res.json({ ok: true, message: 'Connexion réussie : la clé et le modèle sont acceptés.' });
+  } catch (error: any) {
+    if (error instanceof AiError) return res.status(error.status).json({ ok: false, error: error.message });
+    console.error("Error testing AI connection:", error?.message);
+    res.status(500).json({ ok: false, error: "Erreur lors du test de connexion." });
+  }
+});
+
+// Modèles réellement disponibles pour la clé (saisie ou enregistrée) : évite les noms de modèles inexistants
+app.post('/api/ai-settings/models', async (req, res) => {
+  try {
+    const saved = await getAiSettings();
+    const provider = (req.body?.provider === 'claude' || req.body?.provider === 'gemini') ? req.body.provider : saved.provider;
+    const typed = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+    const key = typed || getAiApiKey(provider)?.key;
+    if (!key) return res.status(409).json({ error: 'Saisissez ou enregistrez d\'abord une clé pour ce service.' });
+    res.json({ models: (await listModels(provider, key)).sort() });
+  } catch (error: any) {
+    if (error instanceof AiError) return res.status(error.status).json({ error: error.message });
+    console.error("Error listing AI models:", error?.message);
+    res.status(500).json({ error: "Erreur lors de la récupération des modèles." });
+  }
+});
+
+// Lit une facture jointe. Action explicite de l'utilisateur uniquement : le document est envoyé au service choisi.
+app.post('/api/documents/:id/extract', async (req, res) => {
+  try {
+    const settings = await getAiSettings();
+    const key = getAiApiKey(settings.provider);
+    if (!key) return res.status(409).json({ error: 'Lecture automatique non configurée : ajoutez une clé dans Paramètres.' });
+    const found = await getDocumentFile(req.params.id);
+    if (!found || !fs.existsSync(found.filePath)) return res.status(404).json({ error: 'Document introuvable.' });
+    const result = await extractInvoice({
+      provider: settings.provider, model: settings.model, apiKey: key.key,
+      mime: found.doc.mime, data: fs.readFileSync(found.filePath),
+      suppliers: await getAllSuppliers(), findDuplicate: findPurchaseByInvoice
+    });
+    res.json(result);
+  } catch (error: any) {
+    if (error instanceof AiError) return res.status(error.status).json({ error: error.message });
+    console.error("Error extracting invoice:", error?.message);
+    res.status(500).json({ error: "Erreur lors de la lecture de la facture." });
   }
 });
 
@@ -617,6 +695,10 @@ async function startServer() {
     console.log("[SQLite] Initializing database...");
     await getDb();
     console.log(`[SQLite] Database ready: ${DB_FILE_PATH}`);
+    try {
+      const n = cleanupOrphanDocuments();
+      if (n > 0) console.log(`[Documents] ${n} envoi(s) jamais rattaché(s) à un achat supprimé(s).`);
+    } catch (e) { console.warn('[Documents] nettoyage ignoré :', e); }
   } catch (err) {
     console.error("[SQLite] Error launching database:", err);
   }

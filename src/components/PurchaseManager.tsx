@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
-import { Purchase, PurchaseArticle, PurchaseDocument, Lot, Supplier, Gemstone } from '../types';
+import { Purchase, PurchaseArticle, PurchaseDocument, Lot, Supplier, Gemstone, AiSettingsPublic, InvoiceExtractionResult, ExtractedLine } from '../types';
 import PhotoCapture from './PhotoCapture';
 import LotThumbnail from './LotThumbnail';
 import SupplierFormModal from './SupplierFormModal';
@@ -46,6 +46,7 @@ interface PurchaseManagerProps {
   suppliers?: Supplier[];
   onSaveSupplier?: (s: Supplier) => Promise<boolean | void> | boolean | void;
   onOpenGem?: (gem: Gemstone) => void;
+  onOpenSettings?: () => void;
   autoOpenNewPurchase?: boolean;
   onAutoOpenHandled?: () => void;
 }
@@ -60,6 +61,7 @@ export default function PurchaseManager({
   onDeleteLot,
   suppliers = [],
   onSaveSupplier,
+  onOpenSettings,
   onOpenGem,
   autoOpenNewPurchase,
   onAutoOpenHandled
@@ -138,7 +140,7 @@ export default function PurchaseManager({
     setTempArticles(p.articles || []);
     setPurchaseDocs(p.documents ?? []);
     setActiveDocId(p.documents?.[0]?.id ?? null);
-    setShowDocPreview(true);
+    setShowDocPreview(isWide);
     setDocError('');
     setIsAddingPurchase(true);
   };
@@ -211,13 +213,89 @@ export default function PurchaseManager({
         if (doc.duplicateOfPurchase) messages.push(`Attention : ${file.name} est déjà rattaché à l'achat ${doc.duplicateOfPurchase}.`);
         setPurchaseDocs(prev => [...prev, doc]);
         setActiveDocId(doc.id);
-        setShowDocPreview(true);
+        setShowDocPreview(isWide);
       } catch {
         messages.push(`${file.name} : le serveur est injoignable.`);
       }
     }
     setDocUploading(false);
     setDocError(messages.join(' '));
+  };
+
+  // Lecture automatique de la facture jointe : réglages, confirmation, résultat, champs pré-remplis à vérifier
+  const [aiSettings, setAiSettings] = useState<AiSettingsPublic | null>(null);
+  const [readConfirm, setReadConfirm] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState('');
+  const [extractionResult, setExtractionResult] = useState<InvoiceExtractionResult | null>(null);
+  const [aiFilled, setAiFilled] = useState<Record<string, boolean>>({});
+  const [supplierPrefill, setSupplierPrefill] = useState<Partial<Supplier> | null>(null);
+  const clearAi = (key: string) => setAiFilled(prev => (prev[key] ? { ...prev, [key]: false } : prev));
+  const hl = (key: string) => (aiFilled[key] ? 'ring-1 ring-amber-400/70' : '');
+  const resetAi = () => { setReadConfirm(false); setReading(false); setReadError(''); setExtractionResult(null); setAiFilled({}); setSupplierPrefill(null); };
+
+  // Séparateur formulaire / aperçu : déplaçable à la souris ou au clavier, ratio mémorisé sur ce poste
+  const [splitPct, setSplitPct] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem('purchase.splitPct')); return v >= 35 && v <= 72 ? v : 58; } catch { return 58; }
+  });
+  const splitPctRef = useRef(splitPct);
+  const splitRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const setSplit = (v: number) => { const c = Math.min(72, Math.max(35, Math.round(v))); splitPctRef.current = c; setSplitPct(c); };
+  const persistSplit = () => { try { localStorage.setItem('purchase.splitPct', String(splitPctRef.current)); } catch { /* sans conséquence */ } };
+  const startSplitDrag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const box = splitRef.current?.getBoundingClientRect();
+    if (!box) return;
+    setDragging(true);
+    const move = (ev: PointerEvent) => setSplit(((ev.clientX - box.left) / box.width) * 100);
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      setDragging(false);
+      persistSplit();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  // Grand écran (>= 1280 px) : l'aperçu se place à droite du formulaire ; sinon il s'ouvre sous la zone « document »
+  const [isWide, setIsWide] = useState<boolean>(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)');
+    const onChange = () => setIsWide(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const renderDocPreview = (compact: boolean) => {
+    if (!activeDoc) return null;
+    return (
+      <div id="doc-preview-panel" className={`bg-[#121620] border border-[#212a3d] rounded-xl p-3 space-y-2 ${compact ? '' : 'sticky top-4'}`}>
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-gray-200 truncate" title={activeDoc.name}>📄 {activeDoc.name}</span>
+          <div className="flex items-center gap-3 shrink-0">
+            <a href={`/api/documents/${activeDoc.id}/file`} target="_blank" rel="noreferrer" className="text-[#e0b760] hover:underline">Ouvrir dans un onglet</a>
+            <button type="button" id="btn-hide-doc-preview" onClick={() => setShowDocPreview(false)} className="text-gray-400 hover:text-white">Masquer</button>
+          </div>
+        </div>
+        {purchaseDocs.length > 1 && (
+          <div className="flex flex-wrap gap-1.5">
+            {purchaseDocs.map(d => (
+              <button key={d.id} type="button" onClick={() => setActiveDocId(d.id)}
+                className={`px-2 py-0.5 rounded border text-[10px] truncate max-w-[10rem] ${d.id === activeDoc.id ? 'border-[#b4985c] text-[#eedfa7]' : 'border-gray-700 text-gray-400'}`}>
+                {d.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {activeDoc.mime === 'application/pdf' ? (
+          <iframe title="Aperçu de la facture" src={`/api/documents/${activeDoc.id}/file#navpanes=0&view=FitH`} className={`w-full rounded bg-white ${compact ? 'h-[60vh]' : 'h-[calc(100vh-9rem)]'} ${dragging ? 'pointer-events-none' : ''}`} />
+        ) : (
+          <img alt="Aperçu de la facture" src={`/api/documents/${activeDoc.id}/file`} className="w-full max-h-[80vh] object-contain rounded bg-white" />
+        )}
+      </div>
+    );
   };
 
   // Un document déjà rattaché à un achat est archivé : seul un envoi encore libre peut être retiré
@@ -234,6 +312,7 @@ export default function PurchaseManager({
     setPurchaseDocs([]);
     setActiveDocId(null);
     setDocError('');
+    resetAi();
   };
 
   // Ligne du bordereau en cours de modification (null = on ajoute une nouvelle ligne)
@@ -386,6 +465,10 @@ export default function PurchaseManager({
     if (!supplier.trim()) errs.supplier = "Fournisseur requis";
     if (!noSupplierInvoice && !supplierRef.trim()) errs.supplierRef = "N° requis, ou cochez « sans facture »";
     if (tempArticles.length === 0) errs.articles = "Ajoutez au moins un article avant d'enregistrer";
+    else {
+      const badIdx = tempArticles.findIndex(a => !(a.weight > 0) || !(a.caratPrice > 0));
+      if (badIdx >= 0) errs.articles = `Ligne ${badIdx + 1} : poids ou prix à compléter`;
+    }
     if (Object.keys(errs).length > 0) {
       showErrors(errs, errs.purchaseRef ? 'pur-ref'
         : errs.supplier ? 'pur-supplier-select'
@@ -404,10 +487,10 @@ export default function PurchaseManager({
       date: pDate,
       status: 'En cours',
       totalCost: Number(totalCost.toFixed(2)),
-      articles: tempArticles.map((art, i) => ({
-        ...art,
-        id: art.id ? art.id : `pa-${Date.now()}-${i}`
-      })),
+      articles: tempArticles.map((art, i) => {
+        const { _aiRead, ...clean } = art as any; // le drapeau « à vérifier » ne sert qu'à l'écran
+        return { ...clean, id: clean.id ? clean.id : `pa-${Date.now()}-${i}` };
+      }),
       notes: pNotes.trim(),
       documentIds: purchaseDocs.map(d => d.id)
     };
@@ -427,6 +510,7 @@ export default function PurchaseManager({
     setPurchaseDocs([]);
     setActiveDocId(null);
     setDocError('');
+    resetAi();
     setIsAddingPurchase(false);
     setEditingPurchaseId(null);
     setFormErrors({});
@@ -525,6 +609,60 @@ export default function PurchaseManager({
 
   // All gemstone types helper
   const gemstoneTypesList = ['Saphir', 'Rubis', 'Émeraude', 'Diamant', 'Tanzanite', 'Spinelle', 'Tourmaline', 'Grenat', 'Autre'];
+
+  // --- Lecture automatique de la facture jointe (le résultat pré-remplit, l'utilisateur valide) ---
+  useEffect(() => {
+    if (!isAddingPurchase) return;
+    fetch('/api/ai-settings').then(r => (r.ok ? r.json() : null)).then(s => setAiSettings(s)).catch(() => setAiSettings(null));
+  }, [isAddingPurchase]);
+
+  const normTxt = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const linesFromExtraction = (lines: ExtractedLine[]) => lines.map(l => {
+    const hit = l.gemstoneType ? gemstoneTypesList.find(x => normTxt(x) === normTxt(l.gemstoneType!)) : undefined;
+    const weight = l.weightCt ?? 0;
+    const caratPrice = l.pricePerCt ?? (l.amount !== undefined && weight > 0 ? Number((l.amount / weight).toFixed(2)) : 0);
+    const notes = [l.notes, l.gemstoneType && !hit ? `Variété lue : ${l.gemstoneType}` : '', l.kind !== 'pierre' && l.quantity && l.quantity > 1 ? `${l.quantity} pièces` : ''].filter(Boolean).join(' — ');
+    // Pierre unique lue : entrée directe en stock, avec sa taille / couleur / pureté ; sinon colis à trier (l'utilisateur peut changer)
+    const isStone = l.kind === 'pierre';
+    return {
+      name: l.description || 'Article', gemstoneType: hit ?? 'Autre', weight, caratPrice, totalPrice: Number((weight * caratPrice).toFixed(2)), notes,
+      entryMode: isStone ? 'stock' as const : 'tri' as const,
+      ...(isStone && (l.cut || l.color || l.clarity) ? { stoneDetails: { cut: l.cut ?? '', color: l.color ?? '', clarity: l.clarity ?? '' } } : {}),
+      _aiRead: true
+    } as any;
+  });
+
+  const applyExtraction = (res: InvoiceExtractionResult) => {
+    const x = res.extraction;
+    const filled: Record<string, boolean> = {};
+    if (res.supplierMatch && !supplier.trim()) { setSupplier(res.supplierMatch.name); clearError('supplier'); filled.supplier = true; }
+    if (!noSupplierInvoice && !supplierRef.trim() && x.invoiceNumber) { setSupplierRef(x.invoiceNumber); clearError('supplierRef'); filled.supplierRef = true; }
+    if (x.invoiceDate) { setPDate(x.invoiceDate); filled.date = true; }
+    if (!pNotes.trim() && x.notes) { setPNotes(x.notes); filled.notes = true; }
+    if (tempArticles.length === 0 && x.lines.length > 0) { setTempArticles(linesFromExtraction(x.lines)); clearError('articles'); filled.lines = true; }
+    setAiFilled(filled);
+    setExtractionResult(res);
+  };
+
+  const addExtractedLines = () => {
+    if (!extractionResult) return;
+    setTempArticles(prev => [...prev, ...linesFromExtraction(extractionResult.extraction.lines)]);
+    clearError('articles');
+  };
+
+  const runExtraction = async () => {
+    if (!activeDoc) return;
+    setReadConfirm(false); setReading(true); setReadError(''); setExtractionResult(null);
+    try {
+      const res = await fetch(`/api/documents/${activeDoc.id}/extract`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) setReadError(body.error || 'Lecture impossible.');
+      else applyExtraction(body);
+    } catch {
+      setReadError('Le serveur est injoignable.');
+    }
+    setReading(false);
+  };
 
   // Ouvre la saisie d'un nouvel achat (bouton de l'en-tête, ou arrivée depuis le Tableau de bord)
   const startNewPurchase = async () => {
@@ -1031,34 +1169,12 @@ export default function PurchaseManager({
 
       {/* 2. ADD NEW PURCHASE FORM MODE */}
       {isAddingPurchase && (
-        <div className={activeDoc && showDocPreview ? 'grid grid-cols-1 xl:grid-cols-2 gap-4 items-start' : ''}>
-        {activeDoc && showDocPreview && (
-          <div id="doc-preview-panel" className="bg-[#121620] border border-[#212a3d] rounded-xl p-3 space-y-2 xl:sticky xl:top-4">
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="text-gray-200 truncate" title={activeDoc.name}>📄 {activeDoc.name}</span>
-              <div className="flex items-center gap-3 shrink-0">
-                <a href={`/api/documents/${activeDoc.id}/file`} target="_blank" rel="noreferrer" className="text-[#e0b760] hover:underline">Ouvrir dans un onglet</a>
-                <button type="button" id="btn-hide-doc-preview" onClick={() => setShowDocPreview(false)} className="text-gray-400 hover:text-white">Masquer</button>
-              </div>
-            </div>
-            {purchaseDocs.length > 1 && (
-              <div className="flex flex-wrap gap-1.5">
-                {purchaseDocs.map(d => (
-                  <button key={d.id} type="button" onClick={() => setActiveDocId(d.id)}
-                    className={`px-2 py-0.5 rounded border text-[10px] truncate max-w-[10rem] ${d.id === activeDoc.id ? 'border-[#b4985c] text-[#eedfa7]' : 'border-gray-700 text-gray-400'}`}>
-                    {d.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {activeDoc.mime === 'application/pdf' ? (
-              <iframe title="Aperçu de la facture" src={`/api/documents/${activeDoc.id}/file`} className="w-full h-[70vh] xl:h-[calc(100vh-9rem)] rounded bg-white" />
-            ) : (
-              <img alt="Aperçu de la facture" src={`/api/documents/${activeDoc.id}/file`} className="w-full max-h-[80vh] object-contain rounded bg-white" />
-            )}
-          </div>
-        )}
-        <form onSubmit={handleSaveFullPurchase} className="bg-[#121620] border border-[#212a3d] rounded-xl p-6 space-y-6" id="add-purchase-form">
+        <div
+          ref={splitRef}
+          className={isWide && activeDoc && showDocPreview ? 'grid items-start' : ''}
+          style={isWide && activeDoc && showDocPreview ? { gridTemplateColumns: `minmax(520px, ${splitPct}fr) 14px minmax(320px, ${100 - splitPct}fr)` } : undefined}
+        >
+        <form onSubmit={handleSaveFullPurchase} className="@container bg-[#121620] border border-[#212a3d] rounded-xl p-6 space-y-6" id="add-purchase-form">
           <div className="border-b border-gray-800 pb-4 flex justify-between items-center bg-[#171d2b] -mx-6 -mt-6 p-6 rounded-t-xl mb-4">
             <div>
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
@@ -1094,7 +1210,7 @@ export default function PurchaseManager({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs items-start">
+          <div className="grid grid-cols-2 @3xl:grid-cols-4 gap-4 text-xs items-start">
             <div className="space-y-1 font-mono uppercase">
               <label className="flex items-center gap-1 h-5 text-gray-300">
                 <span>N° Facture d'Achat</span>
@@ -1110,7 +1226,7 @@ export default function PurchaseManager({
               />
               <FieldError field="purchaseRef" />
             </div>
-            <div className="space-y-1 font-mono uppercase col-span-2">
+            <div className="space-y-1 font-mono uppercase col-span-2 order-first @3xl:order-none">
               <div className="flex justify-between items-center h-5">
                 <label className="block text-gray-300">Fournisseur / Négociant de brut</label>
               </div>
@@ -1120,8 +1236,8 @@ export default function PurchaseManager({
                   <select
                     id="pur-supplier-select"
                     value={supplier}
-                    onChange={(e) => { clearError('supplier'); setSupplier(e.target.value); }}
-                    className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplier')} text-white rounded focus:border-[#b4985c] cursor-pointer appearance-none pr-8`}
+                    onChange={(e) => { clearError('supplier'); clearAi('supplier'); setSupplier(e.target.value); }}
+                    className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplier')} text-white rounded focus:border-[#b4985c] cursor-pointer appearance-none pr-8 ${hl('supplier')}`}
                   >
                     <option value="">-- Choisir un fournisseur --</option>
                     {supplier && !directorySuppliers.includes(supplier) && (
@@ -1158,13 +1274,13 @@ export default function PurchaseManager({
                 type="date"
                 required
                 value={pDate}
-                onChange={(e) => setPDate(e.target.value)}
-                className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded focus:border-[#b4985c]"
+                onChange={(e) => { setPDate(e.target.value); clearAi('date'); }}
+                className={`w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-white rounded focus:border-[#b4985c] ${hl('date')}`}
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs items-start">
+          <div className="grid grid-cols-1 @lg:grid-cols-[16rem_1fr] gap-4 text-xs items-start">
             <div className="space-y-1 font-mono uppercase">
               <label className="flex items-center h-5 text-gray-300">
                 N° Facture Fournisseur {!noSupplierInvoice && <span className="text-red-400 ml-1">*</span>}
@@ -1174,16 +1290,16 @@ export default function PurchaseManager({
                 type="text"
                 value={supplierRef}
                 disabled={noSupplierInvoice}
-                onChange={(e) => { setSupplierRef(e.target.value); clearError('supplierRef'); }}
+                onChange={(e) => { setSupplierRef(e.target.value); clearError('supplierRef'); clearAi('supplierRef'); }}
                 placeholder={noSupplierInvoice ? "Sans facture fournisseur" : "N° figurant sur la facture d'origine"}
                 title="Numéro figurant sur la facture émise par le fournisseur"
-                className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplierRef')} text-white rounded focus:border-[#b4985c] normal-case disabled:opacity-50 disabled:cursor-not-allowed`}
+                className={`w-full px-3 py-2 bg-[#171e2c] border ${errorBorder('supplierRef')} text-white rounded focus:border-[#b4985c] normal-case disabled:opacity-50 disabled:cursor-not-allowed ${hl('supplierRef')}`}
               />
               <FieldError field="supplierRef" />
             </div>
-            <div className="md:col-span-3 space-y-1">
-              <div className="hidden md:block h-5" aria-hidden="true" />
-              <label className="flex items-center gap-1.5 md:h-[34px] normal-case text-[11px] text-gray-400 cursor-pointer">
+            <div className="space-y-1">
+              <div className="hidden @lg:block h-5" aria-hidden="true" />
+              <label className="flex items-center gap-1.5 @lg:h-[34px] normal-case text-[11px] text-gray-400 cursor-pointer">
                 <input
                   id="pur-no-supplier-invoice"
                   type="checkbox"
@@ -1236,6 +1352,101 @@ export default function PurchaseManager({
                 ))}
               </div>
             )}
+            {purchaseDocs.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    id="btn-read-invoice"
+                    type="button"
+                    disabled={!aiSettings?.configured || !activeDoc || reading}
+                    onClick={() => setReadConfirm(true)}
+                    title={aiSettings?.configured ? 'Envoyer le document à un service d\'intelligence artificielle pour pré-remplir la saisie' : 'Lecture automatique non configurée : ajoutez une clé dans Paramètres'}
+                    className={`px-3 py-1.5 rounded border border-[#8a733e]/60 text-[#e0b760] hover:bg-amber-400/5 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5 ${reading ? 'animate-pulse bg-amber-400/10 !opacity-100' : 'disabled:opacity-40'}`}
+                    aria-busy={reading}
+                  >
+                    <Sparkles className={`h-3.5 w-3.5 ${reading ? 'animate-spin' : ''}`} />
+                    <span>{reading ? 'Lecture en cours…' : 'Lire la facture'}</span>
+                  </button>
+                  {!aiSettings?.configured && (
+                    <span id="ai-not-configured" className="text-gray-400">
+                      Lecture automatique non configurée.{' '}
+                      {onOpenSettings && <button type="button" id="btn-open-ai-settings" onClick={onOpenSettings} className="text-[#e0b760] hover:underline">Ajouter une clé dans Paramètres</button>}
+                    </span>
+                  )}
+                </div>
+                {readConfirm && aiSettings && (
+                  <div id="read-confirm" className="rounded-lg border border-[#8a733e]/40 bg-amber-500/10 p-3 space-y-2">
+                    <p className="text-amber-200 leading-snug">
+                      Ce document va être <strong>envoyé à {aiSettings.providers.find(p => p.id === aiSettings.provider)?.label}</strong> (modèle {aiSettings.model}) pour être lu.
+                      Rien n'est enregistré : vous vérifiez, puis vous validez l'achat.
+                    </p>
+                    <div className="flex gap-2">
+                      <button id="btn-confirm-read" type="button" onClick={runExtraction} className="px-3 py-1.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-100 hover:bg-amber-500/30 cursor-pointer">Envoyer et lire</button>
+                      <button type="button" onClick={() => setReadConfirm(false)} className="px-3 py-1.5 rounded border border-gray-700 text-gray-300 hover:text-white cursor-pointer">Annuler</button>
+                    </div>
+                  </div>
+                )}
+                {readError && <p id="read-error" role="alert" className="text-red-400 leading-snug">{readError}</p>}
+                {extractionResult && (
+                  <div id="ai-result-panel" className="rounded-lg border border-[#27354d] bg-black/20 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <strong className="text-gray-200">Facture lue ({extractionResult.provider} · {extractionResult.model})</strong>
+                      <button type="button" onClick={() => setExtractionResult(null)} className="text-gray-400 hover:text-white">Fermer</button>
+                    </div>
+                    <p className="text-gray-400 leading-snug">Rien n'est enregistré. Les champs pré-remplis sont entourés en ambre : vérifiez-les avec le document, puis validez l'achat.</p>
+                    <div id="ai-supplier-line">
+                      {extractionResult.supplierMatch ? (
+                        <p className="text-emerald-400">Fournisseur reconnu : <strong>{extractionResult.supplierMatch.name}</strong> (par {extractionResult.supplierMatch.how}).</p>
+                      ) : extractionResult.extraction.supplier.name ? (
+                        <p className="text-amber-300 flex flex-wrap items-center gap-2">
+                          Fournisseur absent de l'annuaire : « {extractionResult.extraction.supplier.name} ».
+                          {onSaveSupplier && (
+                            <button
+                              type="button"
+                              id="btn-create-read-supplier"
+                              onClick={() => { const s = extractionResult.extraction.supplier; setSupplierPrefill({ name: s.name, vatNumber: s.vatNumber, address: s.address, postalCode: s.postalCode, city: s.city, country: s.country }); setIsSupplierModalOpen(true); }}
+                              className="px-2 py-0.5 rounded border border-[#8a733e]/60 text-[#e0b760] hover:bg-amber-400/5 cursor-pointer"
+                            >
+                              Créer la fiche (pré-remplie)
+                            </button>
+                          )}
+                        </p>
+                      ) : null}
+                    </div>
+                    {(extractionResult.extraction.totalExclTax !== undefined || extractionResult.extraction.totalInclTax !== undefined) && (
+                      <p className="text-gray-400">
+                        Totaux lus{extractionResult.extraction.currency ? ` (${extractionResult.extraction.currency})` : ''} :{' '}
+                        {extractionResult.extraction.totalExclTax !== undefined && <>HT <b className="text-gray-200">{extractionResult.extraction.totalExclTax.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</b> </>}
+                        {extractionResult.extraction.vatAmount !== undefined && <>· TVA <b className="text-gray-200">{extractionResult.extraction.vatAmount.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</b> </>}
+                        {extractionResult.extraction.totalInclTax !== undefined && <>· TTC <b className="text-gray-200">{extractionResult.extraction.totalInclTax.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</b></>}
+                      </p>
+                    )}
+                    {extractionResult.extraction.lines.length > 0 && (
+                      <p id="ai-kinds" className="text-gray-400">
+                        Classement proposé : <b className="text-gray-200">{extractionResult.extraction.lines.filter(l => l.kind === 'pierre').length} pierre(s) unique(s)</b> (entrée directe en stock)
+                        {' '}et <b className="text-gray-200">{extractionResult.extraction.lines.filter(l => l.kind !== 'pierre').length} colis / lot(s)</b> à trier.
+                        Vous pouvez changer le mode de chaque ligne avec le crayon.
+                      </p>
+                    )}
+                    {extractionResult.checks.length > 0 ? (
+                      <ul id="ai-checks" className="space-y-1">
+                        {extractionResult.checks.map((c, i) => (
+                          <li key={i} className={c.level === 'error' ? 'text-red-400' : 'text-amber-300'}>{c.level === 'error' ? '✖' : '⚠'} {c.message}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p id="ai-checks-ok" className="text-emerald-400">✔ Les totaux et les lignes sont cohérents.</p>
+                    )}
+                    {tempArticles.length > 0 && !aiFilled.lines && extractionResult.extraction.lines.length > 0 && (
+                      <button type="button" id="btn-add-read-lines" onClick={addExtractedLines} className="px-3 py-1.5 rounded border border-[#2c3a55] bg-[#1a2336] hover:bg-[#202c44] text-gray-200 cursor-pointer">
+                        Ajouter les {extractionResult.extraction.lines.length} lignes lues au bordereau
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {!isWide && activeDoc && showDocPreview && renderDocPreview(true)}
             {docError && <p id="pur-doc-error" role="alert" className="text-amber-400 leading-snug">{docError}</p>}
           </div>
 
@@ -1245,9 +1456,9 @@ export default function PurchaseManager({
               id="pur-notes"
               rows={2}
               value={pNotes}
-              onChange={(e) => setPNotes(e.target.value)}
+              onChange={(e) => { setPNotes(e.target.value); clearAi('notes'); }}
               placeholder="Spécifiez les détails administratifs, de douane, ou d'origine internationale..."
-              className="w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-gray-300 rounded focus:border-[#b4985c]"
+              className={`w-full px-3 py-2 bg-[#171e2c] border border-[#27354d] text-gray-300 rounded focus:border-[#b4985c] ${hl('notes')}`}
             />
           </div>
 
@@ -1261,8 +1472,8 @@ export default function PurchaseManager({
               ? <div className="h-[14px]" />
               : <FieldError field="articles" />}
 
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs items-start">
-              <div className="md:col-span-5 space-y-1">
+            <div className="grid grid-cols-6 @3xl:grid-cols-12 gap-3 text-xs items-start">
+              <div className="col-span-6 @3xl:col-span-5 space-y-1">
                 <label className="block text-gray-400 font-mono text-[10px] uppercase">Désignation de l'Article / Colis</label>
                 <input
                   id="art-name-input"
@@ -1275,7 +1486,7 @@ export default function PurchaseManager({
                 <FieldError field="artName" />
               </div>
 
-              <div className="md:col-span-3 space-y-1">
+              <div className="col-span-2 @3xl:col-span-3 space-y-1">
                 <label className="block text-gray-400 font-mono text-[10px] uppercase">Structure Minérale</label>
                 <select 
                   id="art-type-select"
@@ -1289,7 +1500,7 @@ export default function PurchaseManager({
                 </select>
               </div>
 
-              <div className="md:col-span-2 space-y-1">
+              <div className="col-span-2 space-y-1">
                 <label className="block text-gray-400 font-mono text-[10px] uppercase">Poids total (ct)</label>
                 <input
                   id="art-weight-input"
@@ -1303,7 +1514,7 @@ export default function PurchaseManager({
                 <FieldError field="artWeight" />
               </div>
 
-              <div className="md:col-span-2 space-y-1">
+              <div className="col-span-2 space-y-1">
                 <label className="block text-gray-400 font-mono text-[10px] uppercase">Prix d'achat / ct (€)</label>
                 <input
                   id="art-price-input"
@@ -1394,7 +1605,7 @@ export default function PurchaseManager({
             )}
 
             {/* Ligne d'action : nature de l'article + ajout au bordereau */}
-            <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between text-xs pt-1">
+            <div className="flex flex-col @2xl:flex-row gap-3 @2xl:items-center @2xl:justify-between text-xs pt-1">
               <label
                 htmlFor="art-direct-entry"
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors select-none ${artDirectEntry ? 'bg-[#bda165]/15 border-[#bda165]/50 text-[#e0b760]' : 'bg-[#171e2c] border-[#27354d] text-gray-400 hover:text-gray-200'}`}
@@ -1443,6 +1654,9 @@ export default function PurchaseManager({
                     <div key={idx} className={`flex justify-between items-center bg-black/30 p-2.5 rounded-lg border font-mono text-xs text-gray-300 ${editingArtIdx === idx ? 'border-amber-500/60' : 'border-gray-800'}`}>
                       <div>
                         <span className="font-bold text-white font-sans text-sm">{art.name}</span>
+                        {(art as any)._aiRead && (
+                          <span className="ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-300 border-amber-500/30" title="Lue sur la facture : à vérifier (modifiez la ligne pour la valider)">à vérifier</span>
+                        )}
                         <span className={`ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border ${art.entryMode === 'stock' ? 'bg-[#bda165]/10 text-[#e0b760] border-[#bda165]/30' : 'bg-sky-500/10 text-sky-400 border-sky-500/20'}`}>
                           {art.entryMode === 'stock' ? '💎 Stock direct' : '📦 À trier'}
                         </span>
@@ -1530,6 +1744,29 @@ export default function PurchaseManager({
             </button>
           </div>
         </form>
+        {isWide && activeDoc && showDocPreview && (
+          <div
+            id="doc-split-handle"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Redimensionner le formulaire et l'aperçu"
+            aria-valuenow={splitPct}
+            aria-valuemin={35}
+            aria-valuemax={72}
+            tabIndex={0}
+            title="Glisser pour redimensionner (double-clic : rétablir)"
+            onPointerDown={startSplitDrag}
+            onDoubleClick={() => { setSplit(58); persistSplit(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') { e.preventDefault(); setSplit(splitPctRef.current - 3); persistSplit(); }
+              if (e.key === 'ArrowRight') { e.preventDefault(); setSplit(splitPctRef.current + 3); persistSplit(); }
+            }}
+            className="self-stretch flex items-center justify-center cursor-col-resize group touch-none focus:outline-none"
+          >
+            <div className={`w-1 h-16 rounded-full transition-colors ${dragging ? 'bg-[#bda165]' : 'bg-[#3a465e] group-hover:bg-[#bda165] group-focus:bg-[#bda165]'}`} />
+          </div>
+        )}
+        {isWide && activeDoc && showDocPreview && renderDocPreview(false)}
         </div>
       )}
 
@@ -1879,14 +2116,16 @@ export default function PurchaseManager({
       {isSupplierModalOpen && onSaveSupplier && (
         <SupplierFormModal
           supplier={null}
+          prefill={supplierPrefill ?? undefined}
           onSave={async (newSupplier) => {
             const ok = await onSaveSupplier(newSupplier);
             if (ok === false) return false;
             setSupplier(newSupplier.name);
             clearError('supplier');
+            setSupplierPrefill(null);
             return true;
           }}
-          onClose={() => setIsSupplierModalOpen(false)}
+          onClose={() => { setIsSupplierModalOpen(false); setSupplierPrefill(null); }}
         />
       )}
     </div>
