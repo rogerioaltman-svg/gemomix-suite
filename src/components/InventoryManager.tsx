@@ -406,7 +406,7 @@ export default function InventoryManager({
           <p className="text-xs text-gray-400">
             {id
               ? "Caractéristiques, évaluation, retailles et certificat de cette pierre"
-              : "Saisie manuelle : stock initial, transformation d'un lot ou autre provenance. Les acquisitions passent par Achats & Lots."}
+              : "Saisie manuelle : stock initial, transformation d'un lot ou autre provenance. Les acquisitions passent par Achats."}
           </p>
         </div>
         {id && (
@@ -419,7 +419,7 @@ export default function InventoryManager({
                 className="px-3 py-1.5 text-xs bg-transparent hover:bg-gray-800 text-yellow-500 border border-yellow-500/20 rounded-lg flex items-center gap-1.5 transition-colors"
               >
                 <Award className="h-3.5 w-3.5" />
-                <span>Générer Certificat</span>
+                <span>Imprimer la fiche</span>
               </button>
             )}
             {onDeleteGem && (
@@ -821,7 +821,7 @@ export default function InventoryManager({
                 ))}
                 {onCorrectGem && selectedGem?.sourcePurchaseId && (
                   <p id="gem-purchase-origin-note" className="mt-2 text-[10px] text-gray-400 leading-snug">
-                    Le fournisseur et le prix d'achat proviennent de l'achat d'origine : modifiez-les dans « Achats & Lots », la fiche suivra.
+                    Le fournisseur et le prix d'achat proviennent de l'achat d'origine : modifiez-les dans « Achats », la fiche suivra.
                   </p>
                 )}
                 </>

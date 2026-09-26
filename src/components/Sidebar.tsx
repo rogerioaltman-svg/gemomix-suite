@@ -27,7 +27,7 @@ interface SidebarProps {
 const METIER_ITEMS: NavItem[] = [
   { id: 'tab-dashboard-sidebar', tab: 'dashboard', label: 'Tableau de Bord', icon: <Layers className="h-4 w-4" /> },
   { id: 'tab-inventory-sidebar', tab: 'inventory', label: 'Inventaire', icon: <FileCheck className="h-4 w-4" /> },
-  { id: 'tab-purchases-sidebar', tab: 'purchases', label: 'Achats & Lots', icon: <ShoppingBag className="h-4 w-4 text-emerald-400" /> },
+  { id: 'tab-purchases-sidebar', tab: 'purchases', label: 'Achats', icon: <ShoppingBag className="h-4 w-4 text-emerald-400" /> },
   { id: 'tab-bijoux-sidebar', tab: 'bijoux', label: 'Bijoux', icon: <Sparkles className="h-4 w-4 text-pink-400" /> },
   { id: 'tab-invoices-sidebar', tab: 'invoices', label: 'Facturation', icon: <Receipt className="h-4 w-4 text-amber-400" /> },
   { id: 'tab-contacts-sidebar', tab: 'contacts', label: 'Tiers & CSV', icon: <Users className="h-4 w-4 text-blue-400" /> }
@@ -35,7 +35,6 @@ const METIER_ITEMS: NavItem[] = [
 
 const OUTILS_ITEMS: NavItem[] = [
   { id: 'tab-identifier-sidebar', tab: 'identifier', label: 'Identificateur', icon: <Search className="h-4 w-4" /> },
-  { id: 'tab-certificate-sidebar', tab: 'certificate', label: 'Certificats', icon: <Award className="h-4 w-4" /> },
   { id: 'tab-ai-sidebar', tab: 'ai', label: 'Lab Copilot', icon: <Cpu className="h-4 w-4 text-amber-500" /> }
 ];
 

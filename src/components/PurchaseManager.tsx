@@ -49,6 +49,8 @@ interface PurchaseManagerProps {
   onOpenSettings?: () => void;
   autoOpenNewPurchase?: boolean;
   onAutoOpenHandled?: () => void;
+  triageRequest?: { purchaseId: string; articleId: string } | null; // demande d'ouverture directe du tri d'un colis
+  onTriageHandled?: () => void;
 }
 
 export default function PurchaseManager({
@@ -64,7 +66,9 @@ export default function PurchaseManager({
   onOpenSettings,
   onOpenGem,
   autoOpenNewPurchase,
-  onAutoOpenHandled
+  onAutoOpenHandled,
+  triageRequest,
+  onTriageHandled
 }: PurchaseManagerProps) {
   // Tab within this component: 'purchases' or 'all-lots'
   const [managerTab, setManagerTab] = useState<'purchases' | 'all-lots'>('purchases');
@@ -267,6 +271,48 @@ export default function PurchaseManager({
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
+
+  // Ouverture directe du tri d'un colis (bouton « Trier » de l'inventaire)
+  useEffect(() => {
+    if (!triageRequest) return;
+    const purchase = purchases.find(p => p.id === triageRequest.purchaseId);
+    const article = purchase?.articles.find(a => a.id === triageRequest.articleId);
+    onTriageHandled?.();
+    if (!purchase || !article) return;
+    setManagerTab('purchases');
+    setActiveTriageArticle({ purchase, article });
+    setLastSavedLot(null);
+    setLotRef('…');
+    fetchNextSubReference(purchase.id).then(setLotRef);
+  }, [triageRequest]);
+
+  // Registre des achats : recherche, filtres, pagination, un seul achat déplié à la fois
+  const [regSearch, setRegSearch] = useState('');
+  const [regYear, setRegYear] = useState('Toutes');
+  const [regTodoOnly, setRegTodoOnly] = useState(false);
+  const [regPageSize, setRegPageSize] = useState<number>(() => {
+    try { const v = Number(localStorage.getItem('purchases.pageSize')); return [10, 25, 50].includes(v) ? v : 10; } catch { return 10; }
+  });
+  const [regPage, setRegPage] = useState(1);
+  const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null);
+  useEffect(() => { setRegPage(1); }, [regSearch, regYear, regTodoOnly, regPageSize]);
+  // Nombre de colis bruts pas encore entièrement triés dans un achat
+  const pendingCount = (p: Purchase) => p.articles.filter(a => {
+    if (a.entryMode === 'stock') return false;
+    const sorted = lots.filter(l => l.purchaseArticleId === a.id).reduce((sum, l) => sum + l.weight, 0);
+    return sorted < a.weight;
+  }).length;
+
+  // Visionneuse de la facture archivée d'un achat (depuis le trombone de la liste)
+  const [viewDocs, setViewDocs] = useState<PurchaseDocument[] | null>(null);
+  const [viewDocId, setViewDocId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!viewDocs) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setViewDocs(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewDocs]);
+  const viewDoc = viewDocs?.find(d => d.id === viewDocId) ?? viewDocs?.[0];
 
   const renderDocPreview = (compact: boolean) => {
     if (!activeDoc) return null;
@@ -692,11 +738,23 @@ export default function PurchaseManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Registre : filtrage, tri (récents d'abord) et pagination
+  const filteredPurchases = purchases.filter(p => {
+    if (regYear !== 'Toutes' && !(p.date || '').startsWith(regYear)) return false;
+    if (regTodoOnly && pendingCount(p) === 0) return false;
+    const q = regSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [p.supplier, p.supplierReference, p.reference, p.notes, ...p.articles.map(a => a.name)].some(v => (v || '').toLowerCase().includes(q));
+  }).sort((a, b) => (b.date || '').localeCompare(a.date || '') || String(b.reference).localeCompare(String(a.reference), undefined, { numeric: true }));
+  const pageCount = Math.max(1, Math.ceil(filteredPurchases.length / regPageSize));
+  const curPage = Math.min(regPage, pageCount);
+  const shownPurchases = filteredPurchases.slice((curPage - 1) * regPageSize, curPage * regPageSize);
+
   return (
     <div className="space-y-6">
       
       <PageHeader
-        title="Achats & Lots"
+        title="Achats"
         description="Registre de vos acquisitions et tri des colis bruts en lots."
         actions={
           managerTab === 'purchases' && !isAddingPurchase && !activeTriageArticle ? (
@@ -1779,9 +1837,26 @@ export default function PurchaseManager({
               <span>Registre d'Acquisitions de Joaillerie</span>
             </h3>
             <span className="text-[10px] text-gray-400 font-mono">
-              Total cumulé des achats: <b>{purchases.reduce((sum, p) => sum + p.totalCost, 0).toLocaleString()} €</b>
+              {filteredPurchases.length !== purchases.length ? 'Total de la sélection' : 'Total cumulé des achats'}: <b>{filteredPurchases.reduce((sum, p) => sum + p.totalCost, 0).toLocaleString()} €</b>
             </span>
           </div>
+
+          {purchases.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2" id="purchases-filters">
+              <input id="purchases-search" type="text" value={regSearch} onChange={e => setRegSearch(e.target.value)}
+                placeholder="Fournisseur, n° de facture, désignation…"
+                className="flex-1 min-w-[14rem] px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] rounded-lg text-white focus:outline-none focus:border-[#b4985c] placeholder-gray-500" />
+              <select id="purchases-year" value={regYear} onChange={e => setRegYear(e.target.value)}
+                className="px-3 py-2 text-xs bg-[#171e2c] border border-[#27354d] text-gray-300 rounded-lg focus:outline-none focus:border-[#b4985c]">
+                <option value="Toutes">Toutes les années</option>
+                {Array.from(new Set(purchases.map(p => (p.date || '').slice(0, 4)).filter(Boolean))).sort().reverse().map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer px-2">
+                <input id="purchases-todo" type="checkbox" checked={regTodoOnly} onChange={e => setRegTodoOnly(e.target.checked)} />
+                À traiter uniquement
+              </label>
+            </div>
+          )}
 
           {purchases.length === 0 ? (
             <div className="text-center p-12 bg-[#121620] rounded-xl border border-dashed border-gray-800 text-gray-400">
@@ -1791,17 +1866,28 @@ export default function PurchaseManager({
             </div>
           ) : (
             <div className="space-y-4">
-              {purchases.map((purchase) => {
+              {shownPurchases.length === 0 && (
+                <p className="text-center text-xs text-gray-500 font-mono py-8">Aucun achat ne correspond à ces critères.</p>
+              )}
+              {shownPurchases.map((purchase) => {
                 // Compute number of sorted lots in this purchase
                 const pLots = lots.filter(l => l.purchaseId === purchase.id);
+                const expanded = expandedPurchaseId === purchase.id;
+                const pending = pendingCount(purchase);
                 return (
                   <div 
                     key={purchase.id} 
                     className="bg-[#121620] border border-[#212a3d] rounded-xl overflow-hidden hover:border-[#b4985c]/30 transition-all duration-300"
                   >
                     {/* Header bar of purchase card */}
-                    <div className="p-4 bg-[#171d2b] border-b border-[#212a3d] flex flex-wrap justify-between items-center gap-3">
-                      <div className="flex items-center gap-2.5">
+                    <div
+                      id={`purchase-row-${purchase.id}`}
+                      role="button" tabIndex={0} aria-expanded={expanded}
+                      onClick={() => setExpandedPurchaseId(expanded ? null : purchase.id)}
+                      onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setExpandedPurchaseId(expanded ? null : purchase.id); } }}
+                      className={`px-4 py-3 bg-[#171d2b] ${expanded ? 'border-b border-[#212a3d]' : ''} flex flex-wrap justify-between items-center gap-3 cursor-pointer hover:bg-[#1b2233]`}>
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <ChevronRight className={`h-4 w-4 text-gray-500 transition-transform ${expanded ? 'rotate-90' : ''}`} />
                         <span className="text-xs bg-[#b4985c]/10 text-[#eedfa7] border border-[#b4985c]/20 font-mono px-2 py-0.5 rounded font-bold">
                           {purchase.reference}
                         </span>
@@ -1815,10 +1901,18 @@ export default function PurchaseManager({
                           <Calendar className="h-3 w-3" />
                           {purchase.date}
                         </span>
+                        <span className="text-[10px] text-gray-500 font-mono">{purchase.articles.length} article{purchase.articles.length > 1 ? 's' : ''}</span>
+                        {pending > 0 ? (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-400">{pending} colis à trier</span>
+                        ) : (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">Complet</span>
+                        )}
                         {(purchase.documents?.length ?? 0) > 0 && (
-                          <span className="text-xs text-emerald-400 flex items-center gap-1" title="Facture fournisseur archivée">
+                          <button type="button" id={`btn-view-doc-${purchase.id}`}
+                            onClick={(e) => { e.stopPropagation(); setViewDocs(purchase.documents!); setViewDocId(purchase.documents![0].id); }}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded px-1 flex items-center gap-1 transition-colors" title="Afficher la facture fournisseur">
                             <Paperclip className="h-3 w-3" />{purchase.documents!.length}
-                          </span>
+                          </button>
                         )}
                       </div>
 
@@ -1830,7 +1924,7 @@ export default function PurchaseManager({
                         <div className="flex items-center gap-1">
                           <button 
                             id={`btn-edit-pur-${purchase.id}`}
-                            onClick={() => handleStartEditPurchase(purchase)}
+                            onClick={(e) => { e.stopPropagation(); handleStartEditPurchase(purchase); }}
                             className="p-1 px-2 hover:bg-amber-500/10 text-amber-500 rounded text-xs flex items-center gap-1 transition-colors"
                             title="Modifier cet achat"
                           >
@@ -1838,7 +1932,7 @@ export default function PurchaseManager({
                           </button>
                           <button 
                             id={`btn-delete-pur-${purchase.id}`}
-                            onClick={() => onDeletePurchase(purchase.id)}
+                            onClick={(e) => { e.stopPropagation(); onDeletePurchase(purchase.id); }}
                             className="p-1 px-2 hover:bg-red-500/10 text-red-400 rounded text-xs flex items-center gap-1 transition-colors"
                             title="Supprimer cet achat"
                           >
@@ -1848,6 +1942,7 @@ export default function PurchaseManager({
                       </div>
                     </div>
 
+                    {expanded && (<>
                     {/* Purchase notes if any */}
                     {purchase.notes && (
                       <p className="px-5 py-2 text-xs italic text-gray-400 bg-black/20 border-b border-gray-900 leading-relaxed">
@@ -1959,9 +2054,24 @@ export default function PurchaseManager({
                         })}
                       </div>
                     </div>
+                    </>)}
                   </div>
                 );
               })}
+              {filteredPurchases.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-gray-400 font-mono" id="purchases-pager">
+                  <span>{filteredPurchases.length} achat{filteredPurchases.length > 1 ? 's' : ''}{filteredPurchases.length !== purchases.length ? ` sur ${purchases.length}` : ''}</span>
+                  <span className="flex items-center gap-2">
+                    <select value={regPageSize} onChange={e => { const n = Number(e.target.value); setRegPageSize(n); try { localStorage.setItem('purchases.pageSize', String(n)); } catch { /* préférence non mémorisée */ } }}
+                      className="px-2 py-1 bg-[#171e2c] border border-[#27354d] rounded text-gray-300">
+                      {[10, 25, 50].map(n => <option key={n} value={n}>{n} / page</option>)}
+                    </select>
+                    <button type="button" id="purchases-prev" disabled={curPage <= 1} onClick={() => setRegPage(curPage - 1)} className="px-2 py-1 border border-[#27354d] rounded disabled:opacity-40 hover:text-white">Précédent</button>
+                    <span>{curPage} / {pageCount}</span>
+                    <button type="button" id="purchases-next" disabled={curPage >= pageCount} onClick={() => setRegPage(curPage + 1)} className="px-2 py-1 border border-[#27354d] rounded disabled:opacity-40 hover:text-white">Suivant</button>
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2128,6 +2238,33 @@ export default function PurchaseManager({
           onClose={() => { setIsSupplierModalOpen(false); setSupplierPrefill(null); }}
         />
       )}
+
+        {viewDocs && viewDoc && (
+          <div id="doc-viewer" className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setViewDocs(null)}>
+            <div className="bg-[#121620] border border-[#212a3d] rounded-xl p-3 w-full max-w-4xl h-[90vh] flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-gray-200 truncate" title={viewDoc.name}>📄 {viewDoc.name}</span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <a href={`/api/documents/${viewDoc.id}/file`} target="_blank" rel="noreferrer" className="text-[#e0b760] hover:underline">Ouvrir dans un onglet</a>
+                  <button type="button" id="btn-close-doc-viewer" onClick={() => setViewDocs(null)} className="text-gray-400 hover:text-white">Fermer</button>
+                </div>
+              </div>
+              {viewDocs.length > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {viewDocs.map(d => (
+                    <button key={d.id} type="button" onClick={() => setViewDocId(d.id)}
+                      className={`px-2 py-0.5 rounded border text-[10px] truncate max-w-[10rem] ${d.id === viewDoc.id ? 'border-[#b4985c] text-[#eedfa7]' : 'border-gray-700 text-gray-400'}`}>{d.name}</button>
+                  ))}
+                </div>
+              )}
+              {viewDoc.mime === 'application/pdf' ? (
+                <iframe title="Facture fournisseur" src={`/api/documents/${viewDoc.id}/file#navpanes=0&view=FitH`} className="w-full flex-1 rounded bg-white" />
+              ) : (
+                <img alt="Facture fournisseur" src={`/api/documents/${viewDoc.id}/file`} className="w-full flex-1 min-h-0 object-contain rounded bg-white" />
+              )}
+            </div>
+          </div>
+        )}
     </div>
   );
 }

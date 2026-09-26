@@ -38,12 +38,12 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
     return (
       <div className="space-y-6" id="certificate-tab">
         <PageHeader
-          title="Certificats"
-          description="Sélectionnez une pierre de l'inventaire et éditez son rapport d'authenticité."
+          title="Fiche pierre"
+          description="Fiche descriptive de la pierre, à imprimer et à joindre à la vente. Ce n'est pas un rapport de laboratoire."
         />
         <div className="bg-[#121620] border border-[#212a3d] p-8 text-center text-gray-400 rounded-xl">
           <HelpCircle className="h-12 w-12 mx-auto text-gray-600 mb-3" />
-          <p>Veuillez d'abord enregistrer ou lister des pierres pour pouvoir imprimer un certificat d'authenticité.</p>
+          <p>Veuillez d'abord enregistrer ou lister des pierres pour pouvoir imprimer une fiche descriptive.</p>
         </div>
       </div>
     );
@@ -53,8 +53,8 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
     <div className="space-y-6" id="certificate-tab">
       <PageHeader
         className="no-print"
-        title="Certificats"
-        description="Sélectionnez une pierre de l'inventaire et éditez son rapport d'authenticité."
+        title="Fiche pierre"
+        description="Fiche descriptive de la pierre, à imprimer et à joindre à la vente. Ce n'est pas un rapport de laboratoire."
         actions={
           <>
             <select 
@@ -91,12 +91,12 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
             <h1 className="text-3xl font-extrabold tracking-widest text-[#0a251c] font-serif uppercase">
               {companySettings?.name || "GemoPhy Paris"}
             </h1>
-            <h2 className="text-[10px] tracking-[4px] text-[#8a733e] font-sans uppercase mt-1">Laboratoire Central d'Expertise & de Gemmologie</h2>
-            <p className="text-[9px] text-gray-500 font-sans mt-0.5">Agréé par la Compagnie des Experts Gemmologues - France</p>
+            <h2 className="text-[10px] tracking-[4px] text-[#8a733e] font-sans uppercase mt-1">Négoce de pierres précieuses</h2>
+            <p className="text-[9px] text-gray-500 font-sans mt-0.5">Document commercial établi par le vendeur — ne constitue pas un rapport de laboratoire gemmologique</p>
           </div>
 
           <div className="text-center my-6">
-            <h3 className="text-lg font-bold italic tracking-wider text-emerald-950">RAPPORT D'IDENTIFICATION DE PIERRE PRÉCIEUSE</h3>
+            <h3 className="text-lg font-bold italic tracking-wider text-emerald-950">FICHE DESCRIPTIVE DE PIERRE PRÉCIEUSE</h3>
           </div>
 
           <div className="grid grid-cols-2 gap-8 mb-6">
@@ -134,7 +134,7 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
             <div className="space-y-3 font-sans">
               <h4 className="text-[11px] font-bold text-[#8a733e] uppercase tracking-wide border-b border-gray-200 pb-1 flex items-center gap-1">
                 <Shield className="h-3 w-3 text-emerald-700" />
-                <span>Analyses Physiques & Optiques</span>
+                <span>Caractéristiques physiques</span>
               </h4>
               <div className="flex justify-between text-xs py-1 border-b border-dotted border-gray-100">
                 <span className="text-gray-500">Indice de Réfraction :</span>
@@ -145,7 +145,7 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
                 <span className="font-mono text-gray-900">{activeGem.specificGravity.toFixed(2)} g/cm³</span>
               </div>
               <div className="flex justify-between text-xs py-1 border-b border-dotted border-gray-100">
-                <span className="text-gray-500">Traitement Détecté :</span>
+                <span className="text-gray-500">Traitement :</span>
                 <span className="font-bold text-amber-800 text-xs">{activeGem.treatment}</span>
               </div>
               <div className="flex justify-between text-xs py-1 border-b border-dotted border-gray-100">
@@ -153,11 +153,11 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
                 <span className="font-bold text-gray-900">{activeGem.origin}</span>
               </div>
               <div className="flex justify-between text-xs py-1 border-b border-dotted border-gray-100">
-                <span className="text-gray-500">N° Certificat Officiel :</span>
+                <span className="text-gray-500">Certificat de laboratoire :</span>
                 <span className="font-mono text-gray-900 font-bold">{activeGem.certificate.authority} - {activeGem.certificate.number}</span>
               </div>
               <div className="flex justify-between text-xs py-1 border-b border-dotted border-gray-100">
-                <span className="text-gray-500">Évaluation Marchande :</span>
+                <span className="text-gray-500">Prix indicatif :</span>
                 <span className="font-semibold text-emerald-950 font-mono text-xs">{activeGem.sellingPrice.toLocaleString('fr-FR')} €</span>
               </div>
             </div>
@@ -165,7 +165,7 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
 
           <div className="space-y-2 mt-4 font-sans text-xs">
             <h4 className="text-[11px] font-bold text-[#8a733e] uppercase tracking-wide border-b border-gray-200 pb-1">
-              Observations Cliniques Labo-Expert
+              Description
             </h4>
             <p className="font-serif italic text-xs leading-relaxed text-gray-700 bg-gray-50 p-4 border border-gray-100 rounded">
               "{activeGem.description}"
@@ -174,7 +174,7 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
 
           {activeGem.inclusions && activeGem.inclusions.length > 0 && (
             <div className="mt-4 font-sans text-xs">
-              <span className="block font-semibold text-[#8a733e] text-[10px] uppercase tracking-wider mb-1">Inclusions observées sous grossissement 10x :</span>
+              <span className="block font-semibold text-[#8a733e] text-[10px] uppercase tracking-wider mb-1">Inclusions :</span>
               <div className="flex flex-wrap gap-1.5">
                 {activeGem.inclusions.map((inc, index) => (
                   <span key={index} className="bg-[#b4985c]/10 text-emerald-900 border border-[#b4985c]/20 hover:bg-[#b4985c]/15 px-2 py-0.5 rounded text-[10px] font-mono">
@@ -190,15 +190,15 @@ export default function CertificateLab({ gemstones, companySettings, initialSele
               <div className="w-14 h-14 bg-gray-200 border-2 border-gray-300 rounded flex items-center justify-center text-[7px] text-center mb-1 text-gray-600 font-mono">
                 [ {companySettings?.name || "GemoPhy"} ]
               </div>
-              <span>Validation Digitale</span>
+              <span>Cachet</span>
             </div>
             <div className="text-center">
-              <p>Rapport d'expertise édicté à {companySettings?.city || "Paris"} le : {new Date().toLocaleDateString('fr-FR')}</p>
-              <p className="mt-1">{companySettings?.name || "GemoPhy Suite"} Database Sync Engine</p>
+              <p>Fiche établie à {companySettings?.city || "Paris"} le : {new Date().toLocaleDateString('fr-FR')}</p>
+              
             </div>
             <div className="text-right flex flex-col items-end">
               <div className="w-36 border-t border-gray-400 mt-10 pt-1 text-center font-bold text-[#8a733e]">
-                Expert en chef agréé
+                Le vendeur
               </div>
               <span className="text-[9px] italic text-gray-400">{companySettings?.name || "Dr. Aurélien GemoPhy"}</span>
             </div>

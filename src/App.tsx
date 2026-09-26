@@ -59,6 +59,7 @@ export default function App() {
 
   // Le Tableau de bord ouvre directement la saisie d'un achat (consommé par PurchaseManager)
   const [autoOpenPurchase, setAutoOpenPurchase] = useState(false);
+  const [triageRequest, setTriageRequest] = useState<{ purchaseId: string; articleId: string } | null>(null);
 
   const openGemForm = (gem: Gemstone | null) => {
     setSelectedGem(gem);
@@ -112,7 +113,9 @@ export default function App() {
       let detail = '';
       try { detail = (await res.json())?.error || ''; } catch { /* corps non JSON */ }
       if (res.status === 413) detail = 'Le fichier ou la photo est trop volumineux.';
-      setApiError(`Enregistrement refusé par le serveur${detail ? ` : ${detail}` : ` (erreur ${res.status})`}`);
+      if (res.status === 404 && !detail) detail = "le serveur ne connaît pas cette action (mise à jour non chargée : redémarrez-le)";
+      const what = method === 'DELETE' ? 'Suppression' : url.endsWith('/restore') ? 'Restauration' : 'Enregistrement';
+      setApiError(`${what} refusé${what === 'Enregistrement' ? '' : 'e'} par le serveur${detail ? ` : ${detail}` : ` (erreur ${res.status})`}`);
       return false;
     } catch {
       setApiError("Le serveur est injoignable : les modifications n'ont pas été enregistrées.");
@@ -181,6 +184,12 @@ export default function App() {
   const handleRestoreTrashItem = async (type: TrashEntityType, id: string) => {
     await callApi(`/api/trash/${type}/${id}/restore`, 'POST');
     await loadAllData();
+  };
+
+  const handleDeleteTrashItemPermanently = async (type: TrashEntityType, id: string) => {
+    const ok = await callApi(`/api/trash/${type}/${id}`, 'DELETE');
+    await loadAllData();
+    return ok;
   };
 
   // --- Company Settings CRUD handlers ---
@@ -534,7 +543,7 @@ export default function App() {
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'purchases' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <ShoppingBag className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="whitespace-nowrap">Achats & Lots</span>
+                <span className="whitespace-nowrap">Achats</span>
               </button>
               <button
                 id="tab-invoices-mobile"
@@ -559,14 +568,6 @@ export default function App() {
               >
                 <Search className="h-3.5 w-3.5" />
                 <span className="whitespace-nowrap">🔬 Identificateur</span>
-              </button>
-              <button
-                id="tab-certificate-mobile"
-                onClick={() => setSelectedTab('certificate')}
-                className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'certificate' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
-              >
-                <Award className="h-3.5 w-3.5" />
-                <span className="whitespace-nowrap">📜 Certificats</span>
               </button>
               <button
                 id="tab-ai-mobile"
@@ -628,6 +629,7 @@ export default function App() {
             onSelectGem={(gem) => openGemForm(gem)}
             onNewGem={() => openGemForm(null)}
             onNavigateToTab={setSelectedTab}
+            onOpenTriage={(purchaseId, articleId) => { setTriageRequest({ purchaseId, articleId }); setSelectedTab('purchases'); }}
             onDeleteGem={handleDeleteGemstone}
             onDeleteLot={handleDeleteLot}
           />
@@ -677,6 +679,8 @@ export default function App() {
             onOpenGem={(gem) => openGemForm(gem)}
             autoOpenNewPurchase={autoOpenPurchase}
             onAutoOpenHandled={() => setAutoOpenPurchase(false)}
+            triageRequest={triageRequest}
+            onTriageHandled={() => setTriageRequest(null)}
           />
         )}
 
@@ -735,6 +739,7 @@ export default function App() {
           <TrashManager
             items={trash}
             onRestore={handleRestoreTrashItem}
+            onDeletePermanently={handleDeleteTrashItemPermanently}
           />
         )}
 
