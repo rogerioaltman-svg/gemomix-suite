@@ -122,7 +122,8 @@ async function askClaude(apiKey: string, model: string, mime: string, base64: st
 
 async function askGemini(apiKey: string, model: string, mime: string, base64: string, prompt: string): Promise<string> {
   const baseUrl = process.env.GEMINI_BASE_URL || undefined;
-  const ai = new GoogleGenAI({ apiKey, ...(baseUrl ? { httpOptions: { baseUrl } } : {}) });
+  // Le SDK n'a pas de délai par défaut : sans ceci, une panne réseau ferait moudre "Lecture en cours…" indéfiniment.
+  const ai = new GoogleGenAI({ apiKey, httpOptions: { timeout: 45000, ...(baseUrl ? { baseUrl } : {}) } });
   const parts: any[] = base64 ? [{ inlineData: { mimeType: mime, data: base64 } }, { text: prompt }] : [{ text: prompt }];
   for (let attempt = 0; ; attempt++) {
     try {
