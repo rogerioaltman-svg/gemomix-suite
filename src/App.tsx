@@ -61,9 +61,18 @@ export default function App() {
   const [autoOpenPurchase, setAutoOpenPurchase] = useState(false);
   const [triageRequest, setTriageRequest] = useState<{ purchaseId: string; articleId: string } | null>(null);
 
-  const openGemForm = (gem: Gemstone | null) => {
+  // D'où la fiche pierre a été ouverte, pour que « Retour » ramène au bon endroit
+  // (Inventaire normalement, Achats — avec l'achat rouvert — si on l'a ouverte depuis
+  // « Compléter la fiche »).
+  const [gemFormOrigin, setGemFormOrigin] = useState<'inventory' | 'purchases'>('inventory');
+  const [gemFormOriginPurchaseId, setGemFormOriginPurchaseId] = useState<string | null>(null);
+  const [expandPurchaseId, setExpandPurchaseId] = useState<string | null>(null);
+
+  const openGemForm = (gem: Gemstone | null, origin: 'inventory' | 'purchases' = 'inventory', originPurchaseId?: string) => {
     setSelectedGem(gem);
     setInventoryMode('form');
+    setGemFormOrigin(origin);
+    setGemFormOriginPurchaseId(originPurchaseId ?? null);
     setSelectedTab('inventory');
   };
 
@@ -651,10 +660,17 @@ export default function App() {
           <div>
             <button
               id="btn-back-to-inventory"
-              onClick={() => { setSelectedGem(null); setInventoryMode('list'); }}
+              onClick={() => {
+                setSelectedGem(null);
+                setInventoryMode('list');
+                if (gemFormOrigin === 'purchases') {
+                  setSelectedTab('purchases');
+                  if (gemFormOriginPurchaseId) setExpandPurchaseId(gemFormOriginPurchaseId);
+                }
+              }}
               className="mb-4 px-3 py-1.5 text-xs font-mono font-bold text-gray-300 hover:text-white bg-[#1b2333] hover:bg-[#202a3c] border border-gray-800 rounded-lg transition-all"
             >
-              ← Retour à l'inventaire
+              {gemFormOrigin === 'purchases' ? "← Retour aux achats" : "← Retour à l'inventaire"}
             </button>
           <InventoryManager
             gemstones={gemstones}
@@ -688,7 +704,9 @@ export default function App() {
             suppliers={suppliers}
             onSaveSupplier={handleSaveSupplier}
             onOpenSettings={() => setSelectedTab('settings')}
-            onOpenGem={(gem) => openGemForm(gem)}
+            onOpenGem={(gem, purchaseId) => openGemForm(gem, 'purchases', purchaseId)}
+            expandPurchaseId={expandPurchaseId}
+            onExpandPurchaseHandled={() => setExpandPurchaseId(null)}
             autoOpenNewPurchase={autoOpenPurchase}
             onAutoOpenHandled={() => setAutoOpenPurchase(false)}
             triageRequest={triageRequest}

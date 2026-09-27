@@ -46,12 +46,14 @@ interface PurchaseManagerProps {
   onDeleteLot: (id: string) => void;
   suppliers?: Supplier[];
   onSaveSupplier?: (s: Supplier) => Promise<boolean | void> | boolean | void;
-  onOpenGem?: (gem: Gemstone) => void;
+  onOpenGem?: (gem: Gemstone, purchaseId?: string) => void;
   onOpenSettings?: () => void;
   autoOpenNewPurchase?: boolean;
   onAutoOpenHandled?: () => void;
   triageRequest?: { purchaseId: string; articleId: string } | null; // demande d'ouverture directe du tri d'un colis
   onTriageHandled?: () => void;
+  expandPurchaseId?: string | null; // rouvre cet achat déplié (retour depuis la fiche d'une pierre)
+  onExpandPurchaseHandled?: () => void;
   onUnlockPurchase?: (id: string) => Promise<boolean> | boolean | void;
 }
 
@@ -71,6 +73,8 @@ export default function PurchaseManager({
   onAutoOpenHandled,
   triageRequest,
   onTriageHandled,
+  expandPurchaseId,
+  onExpandPurchaseHandled,
   onUnlockPurchase
 }: PurchaseManagerProps) {
   // Tab within this component: 'purchases' or 'all-lots'
@@ -290,6 +294,14 @@ export default function PurchaseManager({
     setLotRef('…');
     fetchNextSubReference(purchase.id).then(setLotRef);
   }, [triageRequest]);
+
+  // Retour depuis la fiche d'une pierre (« Compléter la fiche ») : rouvre l'achat déplié comme avant
+  useEffect(() => {
+    if (!expandPurchaseId) return;
+    setManagerTab('purchases');
+    setExpandedPurchaseId(expandPurchaseId);
+    onExpandPurchaseHandled?.();
+  }, [expandPurchaseId, onExpandPurchaseHandled]);
 
   // Registre des achats : recherche, filtres, pagination, un seul achat déplié à la fois
   const [regSearch, setRegSearch] = useState('');
@@ -2067,7 +2079,7 @@ export default function PurchaseManager({
                                               <button
                                                 type="button"
                                                 id={`btn-open-gem-${linkedGem.id}`}
-                                                onClick={() => onOpenGem(linkedGem)}
+                                                onClick={() => onOpenGem(linkedGem, purchase.id)}
                                                 className="px-2.5 py-1 text-[10px] font-mono font-bold bg-[#bda165]/10 hover:bg-[#bda165] hover:text-black text-[#e0b760] border border-[#bda165]/30 rounded transition-colors"
                                               >
                                                 Compléter la fiche →
