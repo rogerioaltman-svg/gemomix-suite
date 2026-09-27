@@ -32,6 +32,7 @@ import {
   Check,
   Pencil,
   Lock,
+  Unlock,
   Paperclip,
   History, UserPlus } from 'lucide-react';
 
@@ -51,6 +52,10 @@ interface PurchaseManagerProps {
   onAutoOpenHandled?: () => void;
   triageRequest?: { purchaseId: string; articleId: string } | null; // demande d'ouverture directe du tri d'un colis
   onTriageHandled?: () => void;
+  onLockPurchase?: (id: string) => Promise<boolean> | boolean | void;
+  onUnlockPurchase?: (id: string) => Promise<boolean> | boolean | void;
+  onVerifyPurchase?: (id: string) => Promise<boolean> | boolean | void;
+  onUnverifyPurchase?: (id: string) => Promise<boolean> | boolean | void;
 }
 
 export default function PurchaseManager({
@@ -68,7 +73,11 @@ export default function PurchaseManager({
   autoOpenNewPurchase,
   onAutoOpenHandled,
   triageRequest,
-  onTriageHandled
+  onTriageHandled,
+  onLockPurchase,
+  onUnlockPurchase,
+  onVerifyPurchase,
+  onUnverifyPurchase
 }: PurchaseManagerProps) {
   // Tab within this component: 'purchases' or 'all-lots'
   const [managerTab, setManagerTab] = useState<'purchases' | 'all-lots'>('purchases');
@@ -232,11 +241,13 @@ export default function PurchaseManager({
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState('');
   const [extractionResult, setExtractionResult] = useState<InvoiceExtractionResult | null>(null);
+  // « Fermer » replie seulement le panneau : la lecture reste disponible (pas de nouvel appel au service)
+  const [showAiResult, setShowAiResult] = useState(true);
   const [aiFilled, setAiFilled] = useState<Record<string, boolean>>({});
   const [supplierPrefill, setSupplierPrefill] = useState<Partial<Supplier> | null>(null);
   const clearAi = (key: string) => setAiFilled(prev => (prev[key] ? { ...prev, [key]: false } : prev));
   const hl = (key: string) => (aiFilled[key] ? 'ring-1 ring-amber-400/70' : '');
-  const resetAi = () => { setReadConfirm(false); setReading(false); setReadError(''); setExtractionResult(null); setAiFilled({}); setSupplierPrefill(null); };
+  const resetAi = () => { setReadConfirm(false); setReading(false); setReadError(''); setExtractionResult(null); setShowAiResult(true); setAiFilled({}); setSupplierPrefill(null); };
 
   // Séparateur formulaire / aperçu : déplaçable à la souris ou au clavier, ratio mémorisé sur ce poste
   const [splitPct, setSplitPct] = useState<number>(() => {
@@ -295,6 +306,14 @@ export default function PurchaseManager({
   });
   const [regPage, setRegPage] = useState(1);
   const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null);
+  // Verrouillage volontaire : confirmation sur place (pas de fenêtre surgissante)
+  const [lockConfirmId, setLockConfirmId] = useState<string | null>(null);
+  const [lockBusyId, setLockBusyId] = useState<string | null>(null);
+  const handleToggleLock = async (purchase: Purchase) => {
+    setLockBusyId(purchase.id);
+    try { purchase.locked ? await onUnlockPurchase?.(purchase.id) : await onLockPurchase?.(purchase.id); }
+    finally { setLockBusyId(null); setLockConfirmId(null); }
+  };
   useEffect(() => { setRegPage(1); }, [regSearch, regYear, regTodoOnly, regPageSize]);
   // Nombre de colis bruts pas encore entièrement triés dans un achat
   const pendingCount = (p: Purchase) => p.articles.filter(a => {
@@ -698,7 +717,7 @@ export default function PurchaseManager({
 
   const runExtraction = async () => {
     if (!activeDoc) return;
-    setReadConfirm(false); setReading(true); setReadError(''); setExtractionResult(null);
+    setReadConfirm(false); setReading(true); setReadError(''); setExtractionResult(null); setShowAiResult(true);
     try {
       const res = await fetch(`/api/documents/${activeDoc.id}/extract`, { method: 'POST' });
       const body = await res.json().catch(() => ({}));
@@ -1445,11 +1464,16 @@ export default function PurchaseManager({
                   </div>
                 )}
                 {readError && <p id="read-error" role="alert" className="text-red-400 leading-snug">{readError}</p>}
-                {extractionResult && (
+                {extractionResult && !showAiResult && (
+                  <button type="button" id="btn-show-ai-result" onClick={() => setShowAiResult(true)} className="text-[#e0b760] hover:underline">
+                    Facture lue ({extractionResult.provider} · {extractionResult.model}) — Afficher
+                  </button>
+                )}
+                {extractionResult && showAiResult && (
                   <div id="ai-result-panel" className="rounded-lg border border-[#27354d] bg-black/20 p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <strong className="text-gray-200">Facture lue ({extractionResult.provider} · {extractionResult.model})</strong>
-                      <button type="button" onClick={() => setExtractionResult(null)} className="text-gray-400 hover:text-white">Fermer</button>
+                      <button type="button" onClick={() => setShowAiResult(false)} className="text-gray-400 hover:text-white">Fermer</button>
                     </div>
                     <p className="text-gray-400 leading-snug">Rien n'est enregistré. Les champs pré-remplis sont entourés en ambre : vérifiez-les avec le document, puis validez l'achat.</p>
                     <div id="ai-supplier-line">
@@ -1798,7 +1822,7 @@ export default function PurchaseManager({
               className={`px-6 py-2.5 ${editingPurchaseId ? 'bg-amber-500 hover:bg-amber-400' : 'bg-emerald-500 hover:bg-emerald-400'} text-black font-bold font-mono text-xs rounded-lg transition-colors flex items-center gap-1`}
             >
               <Check className="h-4 w-4" />
-              <span>{editingPurchaseId ? "Enregistrer les modifications" : "Valider l'Achat complet"}</span>
+              <span>{editingPurchaseId ? "Enregistrer les modifications" : "Enregistrer l'achat"}</span>
             </button>
           </div>
         </form>
@@ -1907,6 +1931,22 @@ export default function PurchaseManager({
                         ) : (
                           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">Complet</span>
                         )}
+                        {purchase.locked && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-gray-500/40 bg-gray-500/10 text-gray-300 flex items-center gap-1" title="Achat verrouillé : plus modifiable (hors notes)">
+                            <Lock className="h-3 w-3" /> Verrouillé
+                          </span>
+                        )}
+                        {(onVerifyPurchase || onUnverifyPurchase) && (
+                          <button
+                            type="button"
+                            id={`btn-toggle-verified-pur-${purchase.id}`}
+                            onClick={(e) => { e.stopPropagation(); purchase.verified ? onUnverifyPurchase?.(purchase.id) : onVerifyPurchase?.(purchase.id); }}
+                            title={purchase.verified ? 'Marqué conforme à la facture — cliquer pour retirer' : 'Marquer comme conforme à la facture (simple repère, jamais bloquant)'}
+                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 transition-colors ${purchase.verified ? 'border-sky-500/40 bg-sky-500/10 text-sky-300' : 'border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600'}`}
+                          >
+                            <Check className="h-3 w-3" /> {purchase.verified ? 'Conforme à la facture' : 'Marquer conforme'}
+                          </button>
+                        )}
                         {(purchase.documents?.length ?? 0) > 0 && (
                           <button type="button" id={`btn-view-doc-${purchase.id}`}
                             onClick={(e) => { e.stopPropagation(); setViewDocs(purchase.documents!); setViewDocId(purchase.documents![0].id); }}
@@ -1921,24 +1961,49 @@ export default function PurchaseManager({
                           <span className="text-[9px] text-gray-500 block">TOTAL FACTURE</span>
                           <span className="text-emerald-400 font-extrabold text-sm">{purchase.totalCost.toLocaleString()} €</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <button 
-                            id={`btn-edit-pur-${purchase.id}`}
-                            onClick={(e) => { e.stopPropagation(); handleStartEditPurchase(purchase); }}
-                            className="p-1 px-2 hover:bg-amber-500/10 text-amber-500 rounded text-xs flex items-center gap-1 transition-colors"
-                            title="Modifier cet achat"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button 
-                            id={`btn-delete-pur-${purchase.id}`}
-                            onClick={(e) => { e.stopPropagation(); onDeletePurchase(purchase.id); }}
-                            className="p-1 px-2 hover:bg-red-500/10 text-red-400 rounded text-xs flex items-center gap-1 transition-colors"
-                            title="Supprimer cet achat"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                        {lockConfirmId === purchase.id ? (
+                          <div className="flex items-center gap-1.5 text-[11px]" onClick={e => e.stopPropagation()}>
+                            <span className="text-gray-300">{purchase.locked ? 'Déverrouiller cet achat ?' : 'Verrouiller cet achat ? Il ne sera plus modifiable (hors notes).'}</span>
+                            <button type="button" id={`btn-lock-confirm-${purchase.id}`} onClick={() => handleToggleLock(purchase)} disabled={lockBusyId === purchase.id}
+                              className="px-2 py-1 font-bold bg-amber-500/20 border border-amber-500/40 text-amber-100 rounded hover:bg-amber-500/30 disabled:opacity-50">
+                              {lockBusyId === purchase.id ? '…' : 'Confirmer'}
+                            </button>
+                            <button type="button" onClick={() => setLockConfirmId(null)} className="px-2 py-1 text-gray-400 border border-gray-700 rounded hover:text-white">Annuler</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            {(onLockPurchase || onUnlockPurchase) && (
+                              <button 
+                                id={`btn-toggle-lock-pur-${purchase.id}`}
+                                onClick={(e) => { e.stopPropagation(); setLockConfirmId(purchase.id); }}
+                                className={`p-1 px-2 rounded text-xs flex items-center gap-1 transition-colors ${purchase.locked ? 'hover:bg-emerald-500/10 text-emerald-400' : 'hover:bg-gray-500/10 text-gray-400'}`}
+                                title={purchase.locked ? 'Déverrouiller cet achat' : 'Verrouiller cet achat (figer définitivement fournisseur, date et articles)'}
+                              >
+                                {purchase.locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
+                            {!purchase.locked && (
+                              <button 
+                                id={`btn-edit-pur-${purchase.id}`}
+                                onClick={(e) => { e.stopPropagation(); handleStartEditPurchase(purchase); }}
+                                className="p-1 px-2 hover:bg-amber-500/10 text-amber-500 rounded text-xs flex items-center gap-1 transition-colors"
+                                title="Modifier cet achat"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {!purchase.locked && (
+                              <button 
+                                id={`btn-delete-pur-${purchase.id}`}
+                                onClick={(e) => { e.stopPropagation(); onDeletePurchase(purchase.id); }}
+                                className="p-1 px-2 hover:bg-red-500/10 text-red-400 rounded text-xs flex items-center gap-1 transition-colors"
+                                title="Supprimer cet achat"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 

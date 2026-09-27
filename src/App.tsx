@@ -431,6 +431,30 @@ export default function App() {
     return true;
   };
 
+  const handleLockPurchase = async (id: string) => {
+    const ok = await callApi(`/api/purchases/${id}/lock`, 'POST');
+    if (ok) setPurchases(await fetch('/api/purchases').then(r => r.json()));
+    return ok;
+  };
+
+  const handleUnlockPurchase = async (id: string) => {
+    const ok = await callApi(`/api/purchases/${id}/unlock`, 'POST');
+    if (ok) setPurchases(await fetch('/api/purchases').then(r => r.json()));
+    return ok;
+  };
+
+  const handleVerifyPurchase = async (id: string) => {
+    const ok = await callApi(`/api/purchases/${id}/verify`, 'POST');
+    if (ok) setPurchases(await fetch('/api/purchases').then(r => r.json()));
+    return ok;
+  };
+
+  const handleUnverifyPurchase = async (id: string) => {
+    const ok = await callApi(`/api/purchases/${id}/unverify`, 'POST');
+    if (ok) setPurchases(await fetch('/api/purchases').then(r => r.json()));
+    return ok;
+  };
+
   const handleDeletePurchase = (id: string) => {
     const purchase = purchases.find(p => p.id === id);
     if (!purchase) return;
@@ -441,6 +465,10 @@ export default function App() {
         if (await callApi(`/api/purchases/${id}`, 'DELETE')) {
           setPurchases(purchases.filter(p => p.id !== id));
           setLots(lots.filter(l => l.purchaseId !== id));
+          // Les pierres en entrée directe encore disponibles partent aussi à la Corbeille avec l'achat :
+          // on recharge le stock pour ne pas laisser une fiche fantôme visible à l'écran.
+          const gList = await fetch('/api/gemstones').then(r => r.json());
+          setGemstones(Array.isArray(gList) ? gList.map(normalizeGemstone) : []);
         }
         setConfirmDialog(null);
       }
@@ -681,6 +709,10 @@ export default function App() {
             onAutoOpenHandled={() => setAutoOpenPurchase(false)}
             triageRequest={triageRequest}
             onTriageHandled={() => setTriageRequest(null)}
+            onLockPurchase={handleLockPurchase}
+            onUnlockPurchase={handleUnlockPurchase}
+            onVerifyPurchase={handleVerifyPurchase}
+            onUnverifyPurchase={handleUnverifyPurchase}
           />
         )}
 
