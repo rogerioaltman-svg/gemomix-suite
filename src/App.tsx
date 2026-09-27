@@ -431,26 +431,10 @@ export default function App() {
     return true;
   };
 
-  const handleLockPurchase = async (id: string) => {
-    const ok = await callApi(`/api/purchases/${id}/lock`, 'POST');
-    if (ok) setPurchases(await fetch('/api/purchases').then(r => r.json()));
-    return ok;
-  };
-
+  // Le verrouillage n'est plus un geste séparé : enregistrer un achat le verrouille (et le
+  // confirme conforme) automatiquement côté serveur. Seul le déverrouillage reste manuel.
   const handleUnlockPurchase = async (id: string) => {
     const ok = await callApi(`/api/purchases/${id}/unlock`, 'POST');
-    if (ok) setPurchases(await fetch('/api/purchases').then(r => r.json()));
-    return ok;
-  };
-
-  const handleVerifyPurchase = async (id: string) => {
-    const ok = await callApi(`/api/purchases/${id}/verify`, 'POST');
-    if (ok) setPurchases(await fetch('/api/purchases').then(r => r.json()));
-    return ok;
-  };
-
-  const handleUnverifyPurchase = async (id: string) => {
-    const ok = await callApi(`/api/purchases/${id}/unverify`, 'POST');
     if (ok) setPurchases(await fetch('/api/purchases').then(r => r.json()));
     return ok;
   };
@@ -709,10 +693,7 @@ export default function App() {
             onAutoOpenHandled={() => setAutoOpenPurchase(false)}
             triageRequest={triageRequest}
             onTriageHandled={() => setTriageRequest(null)}
-            onLockPurchase={handleLockPurchase}
             onUnlockPurchase={handleUnlockPurchase}
-            onVerifyPurchase={handleVerifyPurchase}
-            onUnverifyPurchase={handleUnverifyPurchase}
           />
         )}
 

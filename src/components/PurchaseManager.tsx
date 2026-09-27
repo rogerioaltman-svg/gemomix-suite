@@ -52,10 +52,7 @@ interface PurchaseManagerProps {
   onAutoOpenHandled?: () => void;
   triageRequest?: { purchaseId: string; articleId: string } | null; // demande d'ouverture directe du tri d'un colis
   onTriageHandled?: () => void;
-  onLockPurchase?: (id: string) => Promise<boolean> | boolean | void;
   onUnlockPurchase?: (id: string) => Promise<boolean> | boolean | void;
-  onVerifyPurchase?: (id: string) => Promise<boolean> | boolean | void;
-  onUnverifyPurchase?: (id: string) => Promise<boolean> | boolean | void;
 }
 
 export default function PurchaseManager({
@@ -74,10 +71,7 @@ export default function PurchaseManager({
   onAutoOpenHandled,
   triageRequest,
   onTriageHandled,
-  onLockPurchase,
-  onUnlockPurchase,
-  onVerifyPurchase,
-  onUnverifyPurchase
+  onUnlockPurchase
 }: PurchaseManagerProps) {
   // Tab within this component: 'purchases' or 'all-lots'
   const [managerTab, setManagerTab] = useState<'purchases' | 'all-lots'>('purchases');
@@ -306,12 +300,13 @@ export default function PurchaseManager({
   });
   const [regPage, setRegPage] = useState(1);
   const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null);
-  // Verrouillage volontaire : confirmation sur place (pas de fenêtre surgissante)
+  // Déverrouillage : confirmation sur place (pas de fenêtre surgissante). Le verrouillage lui-même
+  // n'est plus un geste séparé : enregistrer verrouille (et reverrouille) automatiquement.
   const [lockConfirmId, setLockConfirmId] = useState<string | null>(null);
   const [lockBusyId, setLockBusyId] = useState<string | null>(null);
-  const handleToggleLock = async (purchase: Purchase) => {
+  const handleUnlock = async (purchase: Purchase) => {
     setLockBusyId(purchase.id);
-    try { purchase.locked ? await onUnlockPurchase?.(purchase.id) : await onLockPurchase?.(purchase.id); }
+    try { await onUnlockPurchase?.(purchase.id); }
     finally { setLockBusyId(null); setLockConfirmId(null); }
   };
   useEffect(() => { setRegPage(1); }, [regSearch, regYear, regTodoOnly, regPageSize]);
@@ -1790,8 +1785,14 @@ export default function PurchaseManager({
             )}
           </div>
 
+          {!noSupplierInvoice && (
+            <p id="pur-verify-notice" className="text-right text-[11px] text-gray-500 leading-snug">
+              En enregistrant, vous confirmez que la saisie correspond à la facture fournisseur (papier ou jointe) — l'achat est alors verrouillé.
+            </p>
+          )}
+
           <div className="flex justify-end gap-3 pt-2">
-            <button 
+            <button
               id="btn-cancel-form"
               type="button"
               onClick={() => {
@@ -1936,16 +1937,14 @@ export default function PurchaseManager({
                             <Lock className="h-3 w-3" /> Verrouillé
                           </span>
                         )}
-                        {(onVerifyPurchase || onUnverifyPurchase) && (
-                          <button
-                            type="button"
-                            id={`btn-toggle-verified-pur-${purchase.id}`}
-                            onClick={(e) => { e.stopPropagation(); purchase.verified ? onUnverifyPurchase?.(purchase.id) : onVerifyPurchase?.(purchase.id); }}
-                            title={purchase.verified ? 'Marqué conforme à la facture — cliquer pour retirer' : 'Marquer comme conforme à la facture (simple repère, jamais bloquant)'}
-                            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 transition-colors ${purchase.verified ? 'border-sky-500/40 bg-sky-500/10 text-sky-300' : 'border-gray-700 text-gray-500 hover:text-gray-300 hover:border-gray-600'}`}
+                        {purchase.verified && (
+                          <span
+                            id={`badge-verified-pur-${purchase.id}`}
+                            title="Confirmé conforme à la facture fournisseur au dernier enregistrement"
+                            className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-sky-500/40 bg-sky-500/10 text-sky-300 flex items-center gap-1"
                           >
-                            <Check className="h-3 w-3" /> {purchase.verified ? 'Conforme à la facture' : 'Marquer conforme'}
-                          </button>
+                            <Check className="h-3 w-3" /> Conforme à la facture
+                          </span>
                         )}
                         {(purchase.documents?.length ?? 0) > 0 && (
                           <button type="button" id={`btn-view-doc-${purchase.id}`}
@@ -1963,8 +1962,8 @@ export default function PurchaseManager({
                         </div>
                         {lockConfirmId === purchase.id ? (
                           <div className="flex items-center gap-1.5 text-[11px]" onClick={e => e.stopPropagation()}>
-                            <span className="text-gray-300">{purchase.locked ? 'Déverrouiller cet achat ?' : 'Verrouiller cet achat ? Il ne sera plus modifiable (hors notes).'}</span>
-                            <button type="button" id={`btn-lock-confirm-${purchase.id}`} onClick={() => handleToggleLock(purchase)} disabled={lockBusyId === purchase.id}
+                            <span className="text-gray-300">Déverrouiller cet achat pour le corriger ?</span>
+                            <button type="button" id={`btn-lock-confirm-${purchase.id}`} onClick={() => handleUnlock(purchase)} disabled={lockBusyId === purchase.id}
                               className="px-2 py-1 font-bold bg-amber-500/20 border border-amber-500/40 text-amber-100 rounded hover:bg-amber-500/30 disabled:opacity-50">
                               {lockBusyId === purchase.id ? '…' : 'Confirmer'}
                             </button>
@@ -1972,15 +1971,20 @@ export default function PurchaseManager({
                           </div>
                         ) : (
                           <div className="flex items-center gap-1">
-                            {(onLockPurchase || onUnlockPurchase) && (
-                              <button 
+                            {purchase.locked && onUnlockPurchase && (
+                              <button
                                 id={`btn-toggle-lock-pur-${purchase.id}`}
                                 onClick={(e) => { e.stopPropagation(); setLockConfirmId(purchase.id); }}
-                                className={`p-1 px-2 rounded text-xs flex items-center gap-1 transition-colors ${purchase.locked ? 'hover:bg-emerald-500/10 text-emerald-400' : 'hover:bg-gray-500/10 text-gray-400'}`}
-                                title={purchase.locked ? 'Déverrouiller cet achat' : 'Verrouiller cet achat (figer définitivement fournisseur, date et articles)'}
+                                className="p-1 px-2 rounded text-xs flex items-center gap-1 transition-colors hover:bg-emerald-500/10 text-emerald-400"
+                                title="Déverrouiller pour corriger (fournisseur, date, articles) — se reverrouille au prochain enregistrement"
                               >
-                                {purchase.locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                                <Unlock className="h-3.5 w-3.5" />
                               </button>
+                            )}
+                            {!purchase.locked && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300" title="Déverrouillé : enregistrez pour reverrouiller">
+                                Déverrouillé
+                              </span>
                             )}
                             {!purchase.locked && (
                               <button 

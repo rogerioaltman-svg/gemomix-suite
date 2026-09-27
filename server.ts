@@ -12,7 +12,7 @@ import dotenv from 'dotenv';
 import {
   getDb, DB_FILE_PATH,
   getAllGemstones, saveGemstone, deleteGemstone, getGemstoneImage, getLotImage,
-  getAllPurchases, savePurchase, deletePurchase, lockPurchase, unlockPurchase, verifyPurchase, unverifyPurchase, deleteLotsByPurchaseId, getNextPurchaseReference, getNextSubReference,
+  getAllPurchases, savePurchase, deletePurchase, lockPurchase, unlockPurchase, deleteLotsByPurchaseId, getNextPurchaseReference, getNextSubReference,
   getAllLots, saveLot, deleteLot,
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
@@ -284,16 +284,6 @@ app.post('/api/purchases/:id/unlock', async (req, res) => {
     console.error("Error unlocking purchase:", error);
     res.status(400).json({ error: error.message || "Erreur lors du déverrouillage." });
   }
-});
-
-app.post('/api/purchases/:id/verify', async (req, res) => {
-  try { await verifyPurchase(req.params.id); res.json({ success: true }); }
-  catch (error: any) { console.error("Error verifying purchase:", error); res.status(400).json({ error: error.message || "Erreur." }); }
-});
-
-app.post('/api/purchases/:id/unverify', async (req, res) => {
-  try { await unverifyPurchase(req.params.id); res.json({ success: true }); }
-  catch (error: any) { console.error("Error unverifying purchase:", error); res.status(400).json({ error: error.message || "Erreur." }); }
 });
 
 app.get('/api/purchases/:id/next-sub-reference', async (req, res) => {

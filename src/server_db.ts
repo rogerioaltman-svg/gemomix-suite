@@ -184,6 +184,7 @@ function getConnection(): Database.Database {
   ensureSupplierReferenceColumn(db);
   ensurePurchaseLockedColumn(db);
   ensurePurchaseVerifiedColumn(db);
+  lockPreExistingPurchasesOnce(db);
   ensureDeletionLogTable(db);
   ensureInvoiceSnapshotColumns(db);
   ensureSupplierPostalCodeColumn(db);
@@ -248,6 +249,20 @@ function ensurePurchaseVerifiedColumn(conn: Database.Database) {
     console.log('[SQLite] Migration : ajout de verified_at sur purchases...');
     conn.exec('ALTER TABLE purchases ADD COLUMN verified_at TEXT;');
   }
+}
+
+// Migration ponctuelle : les achats déjà en base avant l'introduction du verrouillage automatique
+// (savePurchase, plus haut) n'ont jamais été « enregistrés » sous cette règle — ils resteraient
+// affichés « Déverrouillé » indéfiniment, sans que rien ne les distingue d'une saisie en cours. On
+// les verrouille une bonne fois pour toutes (et on les marque conformes, sauf sans facture
+// fournisseur) : idempotent, ne touche jamais un achat déjà verrouillé ou créé après coup.
+function lockPreExistingPurchasesOnce(conn: Database.Database) {
+  const now = new Date().toISOString();
+  const n = conn.prepare(`
+    UPDATE purchases SET locked_at = @now, verified_at = CASE WHEN no_supplier_invoice = 1 THEN NULL ELSE @now END
+    WHERE locked_at IS NULL
+  `).run({ now }).changes;
+  if (n > 0) console.log(`[SQLite] Migration : ${n} achat(s) existant(s) verrouillé(s) automatiquement.`);
 }
 
 function ensureSupplierReferenceColumn(conn: Database.Database) {
@@ -1280,6 +1295,9 @@ export async function savePurchase(p: Purchase): Promise<void> {
     createDirectEntryGemstones(conn, finalPurchase);
     if (previous) propagatePurchaseChanges(conn, previous, finalPurchase);
     if (Array.isArray(p.documentIds) && p.documentIds.length > 0) linkDocuments(conn, finalPurchase.id, p.documentIds);
+    // Enregistrer verrouille : plus besoin d'un geste séparé, et donc plus rien à oublier. Reste
+    // modifiable via « Déverrouiller », qui invalide la confirmation jusqu'au prochain enregistrement.
+    lockPurchaseSync(conn, finalPurchase.id, !!finalPurchase.noSupplierInvoice);
   });
   run();
 }
@@ -1330,37 +1348,37 @@ function generatePurchaseReference(conn: Database.Database): string {
   return String(next);
 }
 
-export async function lockPurchase(id: string): Promise<void> {
-  const conn = getConnection();
-  const row = conn.prepare('SELECT locked_at FROM purchases WHERE id = ?').get(id) as { locked_at: string | null } | undefined;
-  if (!row) throw new Error("Achat introuvable.");
-  if (row.locked_at) return; // déjà verrouillé : rien à faire
-  conn.prepare('UPDATE purchases SET locked_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+// Verrouille (et marque « conforme à la facture », sauf achat sans facture fournisseur) —
+// toujours appelé en interne à la fin d'un enregistrement réussi (savePurchase) : plus besoin
+// d'y penser séparément. Reste exporté pour la Corbeille et d'éventuels appels directs.
+function lockPurchaseSync(conn: Database.Database, id: string, noSupplierInvoice: boolean) {
+  const now = new Date().toISOString();
+  conn.prepare('UPDATE purchases SET locked_at = ?, verified_at = ? WHERE id = ?')
+    .run(now, noSupplierInvoice ? null : now, id);
 }
 
-// Déverrouiller reste possible tant que la facturation réelle n'a pas démarré (le temps de se
-// tromper de bouton, ou de devoir reprendre une saisie). Une fois la facturation réelle en
-// service, un achat verrouillé le reste : passer par une correction tracée si nécessaire.
+export async function lockPurchase(id: string): Promise<void> {
+  const conn = getConnection();
+  const row = conn.prepare('SELECT locked_at, no_supplier_invoice FROM purchases WHERE id = ?').get(id) as { locked_at: string | null; no_supplier_invoice: number } | undefined;
+  if (!row) throw new Error("Achat introuvable.");
+  if (row.locked_at) return; // déjà verrouillé : rien à faire
+  lockPurchaseSync(conn, id, !!row.no_supplier_invoice);
+}
+
+// Déverrouiller sert à corriger une vraie erreur. Refusé si une pierre issue de cet achat a déjà
+// été vendue ou réservée (la correction passerait alors à côté de ce qui compte vraiment), et,
+// une fois la facturation réelle en service, un achat verrouillé le reste définitivement.
 export async function unlockPurchase(id: string): Promise<void> {
   const conn = getConnection();
   if (conn.prepare("SELECT 1 FROM app_flags WHERE key = 'invoicing_live_since'").get()) {
     throw new InvoiceLockedError("Facturation réelle en service : un achat verrouillé ne peut plus être déverrouillé.");
   }
-  conn.prepare('UPDATE purchases SET locked_at = NULL WHERE id = ?').run(id);
-}
-
-// « Conforme à la facture » : simple marque, jamais restreinte (même verrouillé, même en régime
-// réel) — poser ou retirer ce constat ne change rien à ce qui est modifiable.
-export async function verifyPurchase(id: string): Promise<void> {
-  const conn = getConnection();
-  const row = conn.prepare('SELECT verified_at FROM purchases WHERE id = ?').get(id) as { verified_at: string | null } | undefined;
-  if (!row) throw new Error('Achat introuvable.');
-  if (row.verified_at) return;
-  conn.prepare('UPDATE purchases SET verified_at = ? WHERE id = ?').run(new Date().toISOString(), id);
-}
-
-export async function unverifyPurchase(id: string): Promise<void> {
-  getConnection().prepare('UPDATE purchases SET verified_at = NULL WHERE id = ?').run(id);
+  const sold = conn.prepare("SELECT reference, status FROM gemstones WHERE source_purchase_id = ? AND deleted_at IS NULL AND status != 'Disponible' LIMIT 1").get(id) as { reference: string; status: string } | undefined;
+  if (sold) {
+    throw new InvoiceLockedError(`La pierre ${sold.reference} issue de cet achat n'est plus disponible (${sold.status}) : l'achat ne peut plus être déverrouillé.`);
+  }
+  // Une correction à venir invalide la confirmation « conforme » précédente : à reconfirmer au prochain enregistrement.
+  conn.prepare('UPDATE purchases SET locked_at = NULL, verified_at = NULL WHERE id = ?').run(id);
 }
 
 export async function getNextPurchaseReference(): Promise<string> {
