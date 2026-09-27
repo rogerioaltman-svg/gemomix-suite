@@ -9,7 +9,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { SEED_GEMSTONES, SEED_PURCHASES, SEED_LOTS } from './data';
 import { AI_PROVIDERS } from './invoice_ai';
-import { Gemstone, Purchase, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot, InvoicingStatus, PurchaseDocument, AiProvider, AiSettingsPublic } from './types';
+import { Gemstone, Purchase, PurchaseArticle, Lot, Supplier, Client, SalesInvoice, CompanySettings, PriceGuideEntry, TrashItem, TrashEntityType, StockMovement, StockMovementType, Bijou, SellerSnapshot, ClientSnapshot, InvoicingStatus, PurchaseDocument, AiProvider, AiSettingsPublic } from './types';
 
 export const DB_FILE_PATH = path.join(process.cwd(), 'gemophy.db');
 // Ancienne base JSON (générée par la version AI Studio) : importée puis archivée au premier lancement
@@ -182,6 +182,8 @@ function getConnection(): Database.Database {
   ensureSourceColumns(db);
   ensureDeletedAtColumns(db);
   ensureSupplierReferenceColumn(db);
+  ensurePurchaseLockedColumn(db);
+  ensurePurchaseVerifiedColumn(db);
   ensureDeletionLogTable(db);
   ensureInvoiceSnapshotColumns(db);
   ensureSupplierPostalCodeColumn(db);
@@ -225,6 +227,28 @@ function ensureSourceColumns(conn: Database.Database) {
 // jamais (on ne fait plus de vraie suppression SQL) : le comportement équivalent
 // est désormais reproduit manuellement dans deletePurchase (cascade vers lots).
 const TABLES_WITH_SOFT_DELETE = ['gemstones', 'purchases', 'lots', 'suppliers', 'clients', 'sales_invoices', 'price_guide', 'bijoux'];
+
+// Verrouillage volontaire d'un achat (bouton « Verrouiller cet achat ») : au-delà des verrous
+// automatiques (article touché par un tri/une vente, période comptable), Laurent peut figer
+// lui-même un achat dont il est sûr d'avoir fini la saisie.
+function ensurePurchaseLockedColumn(conn: Database.Database) {
+  const cols = (conn.pragma('table_info(purchases)') as any[]).map(c => c.name);
+  if (!cols.includes('locked_at')) {
+    console.log('[SQLite] Migration : ajout de locked_at sur purchases...');
+    conn.exec('ALTER TABLE purchases ADD COLUMN locked_at TEXT;');
+  }
+}
+
+// « Conforme à la facture » : marque purement informative posée par Laurent après vérification
+// visuelle contre le document (papier ou joint). Jamais bloquante, toujours réversible en un clic —
+// contrairement au verrouillage, qui a de vraies conséquences sur ce qui reste modifiable.
+function ensurePurchaseVerifiedColumn(conn: Database.Database) {
+  const cols = (conn.pragma('table_info(purchases)') as any[]).map(c => c.name);
+  if (!cols.includes('verified_at')) {
+    console.log('[SQLite] Migration : ajout de verified_at sur purchases...');
+    conn.exec('ALTER TABLE purchases ADD COLUMN verified_at TEXT;');
+  }
+}
 
 function ensureSupplierReferenceColumn(conn: Database.Database) {
   const cols = (conn.pragma('table_info(purchases)') as any[]).map(c => c.name);
@@ -568,7 +592,11 @@ function rowToPurchase(r: any): Purchase {
     status: r.status,
     totalCost: r.total_cost,
     articles: JSON.parse(r.articles || '[]'),
-    notes: r.notes ?? undefined
+    notes: r.notes ?? undefined,
+    locked: !!r.locked_at,
+    lockedAt: r.locked_at ?? undefined,
+    verified: !!r.verified_at,
+    verifiedAt: r.verified_at ?? undefined
   };
 }
 
@@ -1151,6 +1179,78 @@ function linkDocuments(conn: Database.Database, purchaseId: string, ids: string[
   for (const id of ids) link.run(purchaseId, id, purchaseId);
 }
 
+// Un article dont une part est déjà partie en lots de tri, ou dont la pierre unique n'est plus
+// « Disponible » (réservée ou vendue), a des conséquences réelles ailleurs dans l'application :
+// son poids et son prix ne peuvent plus être réécrits en silence. Le reste (nom, notes, mode) reste libre.
+// Le supprimer purement et simplement est refusé pour la même raison.
+function articleLockReason(conn: Database.Database, purchaseId: string, art: PurchaseArticle): string | null {
+  if (art.entryMode === 'stock') {
+    const gem = conn.prepare('SELECT status FROM gemstones WHERE source_article_id = ?').get(art.id) as { status: string } | undefined;
+    if (gem && gem.status !== 'Disponible') return `la pierre issue de « ${art.name} » n'est plus disponible (${gem.status})`;
+    return null;
+  }
+  const sorted = conn.prepare('SELECT COALESCE(SUM(weight), 0) AS w FROM lots WHERE purchase_article_id = ? AND deleted_at IS NULL').get(art.id) as { w: number };
+  if (sorted.w > 0.001) return `${sorted.w.toFixed(2)} ct de « ${art.name} » déjà trié(s) en lot`;
+  return null;
+}
+
+// Une fois la facturation réelle démarrée, un achat déjà enregistré est considéré comme déclaré :
+// son fournisseur et sa date (la période comptable) ne bougent plus, pour ne pas décaler après coup
+// ce que le comptable a déjà pu saisir de son côté. Le reste (notes, articles non verrouillés,
+// documents) reste modifiable.
+function assertPurchasePeriodLocked(conn: Database.Database, previous: Purchase, current: Purchase) {
+  if (!conn.prepare("SELECT 1 FROM app_flags WHERE key = 'invoicing_live_since'").get()) return;
+  if ((previous.supplier ?? '') !== (current.supplier ?? '')) {
+    throw new InvoiceLockedError("Facturation réelle en service : le fournisseur d'un achat déjà enregistré n'est plus modifiable.");
+  }
+  if ((previous.date ?? '') !== (current.date ?? '')) {
+    throw new InvoiceLockedError("Facturation réelle en service : la date d'un achat déjà enregistré (sa période comptable) n'est plus modifiable.");
+  }
+}
+
+// Une ligne « pierre unique » supprimée de l'achat (erreur de saisie, doublon…) ne laisse jamais une
+// fiche orpheline active : la pierre créée par cette ligne part à la Corbeille (jamais effacée pour de
+// bon), avec une trace dans son historique. N'est atteint que si articleLockReason a laissé passer la
+// suppression, donc seulement quand la pierre est encore « Disponible » — jamais vendue ou réservée.
+function retractRemovedDirectEntryGemstones(conn: Database.Database, previous: Purchase, current: Purchase) {
+  const currentIds = new Set((current.articles ?? []).map(a => a.id));
+  for (const before of previous.articles ?? []) {
+    if (before.entryMode !== 'stock' || currentIds.has(before.id)) continue;
+    const gem = conn.prepare("SELECT id, reference, status FROM gemstones WHERE source_article_id = ? AND deleted_at IS NULL").get(before.id) as { id: string; reference: string; status: string } | undefined;
+    if (!gem || gem.status !== 'Disponible') continue; // garde-fou : ne devrait pas arriver, le verrou l'aurait déjà refusé
+    conn.prepare('UPDATE gemstones SET deleted_at = ? WHERE id = ?').run(new Date().toISOString(), gem.id);
+    logMovement(conn, 'AJUSTEMENT', 'gemstone', gem.id, gem.reference, undefined, undefined,
+      `Retirée à la Corbeille : la ligne d'origine (« ${before.name} ») a été supprimée de l'achat ${current.reference}.`);
+  }
+}
+
+function assertPurchaseArticlesMutable(conn: Database.Database, purchaseId: string, previous: Purchase, current: Purchase) {
+  const currentById = new Map((current.articles ?? []).map(a => [a.id, a]));
+  for (const before of previous.articles ?? []) {
+    const reason = articleLockReason(conn, purchaseId, before);
+    if (!reason) continue;
+    const after = currentById.get(before.id);
+    if (!after) throw new InvoiceLockedError(`Article verrouillé : ${reason}, il ne peut plus être supprimé de l'achat.`);
+    if ((after.weight ?? 0) !== (before.weight ?? 0) || (after.totalPrice ?? 0) !== (before.totalPrice ?? 0) || (after.caratPrice ?? 0) !== (before.caratPrice ?? 0)) {
+      throw new InvoiceLockedError(`Article verrouillé : ${reason}, son poids et son prix ne sont plus modifiables.`);
+    }
+  }
+}
+
+// Achat verrouillé volontairement : tout, sauf les notes et l'ajout de documents, est figé.
+// Comparaison des articles hors stoneDetails (jamais conservés en base) et hors ordre de saisie.
+function assertPurchaseNotLocked(previous: Purchase, current: Purchase) {
+  if (!previous.locked) return;
+  const artKey = (a: PurchaseArticle) => `${a.id}|${a.name}|${a.gemstoneType}|${a.weight}|${a.caratPrice}|${a.totalPrice}|${a.entryMode ?? 'tri'}`;
+  const sameArticles = JSON.stringify((previous.articles ?? []).map(artKey).sort()) === JSON.stringify((current.articles ?? []).map(artKey).sort());
+  const sameHeader = (previous.supplier ?? '') === (current.supplier ?? '') && (previous.date ?? '') === (current.date ?? '')
+    && (previous.supplierReference ?? '') === (current.supplierReference ?? '') && !!previous.noSupplierInvoice === !!current.noSupplierInvoice
+    && (previous.totalCost ?? 0) === (current.totalCost ?? 0);
+  if (!sameArticles || !sameHeader) {
+    throw new InvoiceLockedError("Cet achat est verrouillé : seules les notes et l'ajout d'un document restent modifiables. Déverrouillez-le d'abord si une correction est vraiment nécessaire.");
+  }
+}
+
 export async function savePurchase(p: Purchase): Promise<void> {
   const conn = getConnection();
   const run = conn.transaction(() => {
@@ -1170,6 +1270,12 @@ export async function savePurchase(p: Purchase): Promise<void> {
     };
     const previousRow = conn.prepare('SELECT * FROM purchases WHERE id = ?').get(p.id);
     const previous: Purchase | undefined = previousRow ? rowToPurchase(previousRow) : undefined;
+    if (previous) {
+      assertPurchaseNotLocked(previous, finalPurchase);
+      assertPurchasePeriodLocked(conn, previous, finalPurchase);
+      assertPurchaseArticlesMutable(conn, p.id, previous, finalPurchase);
+      retractRemovedDirectEntryGemstones(conn, previous, finalPurchase);
+    }
     upsertPurchase(conn, storedPurchase);
     createDirectEntryGemstones(conn, finalPurchase);
     if (previous) propagatePurchaseChanges(conn, previous, finalPurchase);
@@ -1201,6 +1307,9 @@ function propagatePurchaseChanges(conn: Database.Database, previous: Purchase, c
         `Achat ${current.reference} modifié — prix d'achat : ${before.totalPrice ?? 0} → ${art.totalPrice ?? 0}`);
     }
   }
+  // Colis à trier : un lot déjà sorti garde son propre poids et son propre coût (figés à sa création,
+  // cf. saveLot) — rien à répercuter dessus. Seule trace utile : que l'article source a été modifié
+  // avant d'être verrouillé (poids/prix encore libres tant qu'aucun lot n'en était sorti).
 }
 
 // Génère le prochain numéro de facture d'achat séquentiel (ex: "512", "513"...).
@@ -1219,6 +1328,39 @@ function generatePurchaseReference(conn: Database.Database): string {
   let next = max + 1;
   while (exists.get(String(next))) next++;
   return String(next);
+}
+
+export async function lockPurchase(id: string): Promise<void> {
+  const conn = getConnection();
+  const row = conn.prepare('SELECT locked_at FROM purchases WHERE id = ?').get(id) as { locked_at: string | null } | undefined;
+  if (!row) throw new Error("Achat introuvable.");
+  if (row.locked_at) return; // déjà verrouillé : rien à faire
+  conn.prepare('UPDATE purchases SET locked_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+}
+
+// Déverrouiller reste possible tant que la facturation réelle n'a pas démarré (le temps de se
+// tromper de bouton, ou de devoir reprendre une saisie). Une fois la facturation réelle en
+// service, un achat verrouillé le reste : passer par une correction tracée si nécessaire.
+export async function unlockPurchase(id: string): Promise<void> {
+  const conn = getConnection();
+  if (conn.prepare("SELECT 1 FROM app_flags WHERE key = 'invoicing_live_since'").get()) {
+    throw new InvoiceLockedError("Facturation réelle en service : un achat verrouillé ne peut plus être déverrouillé.");
+  }
+  conn.prepare('UPDATE purchases SET locked_at = NULL WHERE id = ?').run(id);
+}
+
+// « Conforme à la facture » : simple marque, jamais restreinte (même verrouillé, même en régime
+// réel) — poser ou retirer ce constat ne change rien à ce qui est modifiable.
+export async function verifyPurchase(id: string): Promise<void> {
+  const conn = getConnection();
+  const row = conn.prepare('SELECT verified_at FROM purchases WHERE id = ?').get(id) as { verified_at: string | null } | undefined;
+  if (!row) throw new Error('Achat introuvable.');
+  if (row.verified_at) return;
+  conn.prepare('UPDATE purchases SET verified_at = ? WHERE id = ?').run(new Date().toISOString(), id);
+}
+
+export async function unverifyPurchase(id: string): Promise<void> {
+  getConnection().prepare('UPDATE purchases SET verified_at = NULL WHERE id = ?').run(id);
 }
 
 export async function getNextPurchaseReference(): Promise<string> {
@@ -1322,8 +1464,21 @@ export async function deletePurchase(id: string): Promise<void> {
   const run = conn.transaction(() => {
     // Reproduit manuellement l'ancien ON DELETE CASCADE lots->purchases : les
     // lots de tri n'ont pas d'existence propre hors de leur achat d'origine.
-    // Les pierres en entrée directe (source_purchase_id), elles, restent actives :
-    // ce sont des biens physiques réels, l'archivage de la facture ne les efface pas.
+    // Les pierres en entrée directe (source_purchase_id) sont des biens physiques réels : supprimer
+    // l'achat ne les efface jamais pour de bon. Même règle que pour une seule ligne retirée d'un
+    // achat (retractRemovedDirectEntryGemstones) : encore « Disponible », elles partent à la Corbeille,
+    // avec une trace ; déjà vendues ou réservées, la suppression de l'achat est refusée.
+    const gems = conn.prepare("SELECT id, reference, status FROM gemstones WHERE source_purchase_id = ? AND deleted_at IS NULL").all(id) as { id: string; reference: string; status: string }[];
+    const notAvailable = gems.find(g => g.status !== 'Disponible');
+    if (notAvailable) {
+      throw new InvoiceLockedError(`Achat verrouillé : la pierre ${notAvailable.reference} n'est plus disponible (${notAvailable.status}), l'achat ne peut plus être supprimé.`);
+    }
+    const purchase = conn.prepare('SELECT reference FROM purchases WHERE id = ?').get(id) as { reference: string } | undefined;
+    for (const g of gems) {
+      conn.prepare('UPDATE gemstones SET deleted_at = ? WHERE id = ?').run(now, g.id);
+      logMovement(conn, 'AJUSTEMENT', 'gemstone', g.id, g.reference, undefined, undefined,
+        `Retirée à la Corbeille : l'achat ${purchase?.reference ?? id} dont elle provient a été supprimé.`);
+    }
     conn.prepare('UPDATE lots SET deleted_at = ? WHERE purchase_id = ? AND deleted_at IS NULL').run(now, id);
     conn.prepare('UPDATE purchases SET deleted_at = ? WHERE id = ?').run(now, id);
   });
@@ -1335,6 +1490,8 @@ export async function restorePurchase(id: string): Promise<void> {
   const run = conn.transaction(() => {
     conn.prepare('UPDATE purchases SET deleted_at = NULL WHERE id = ?').run(id);
     conn.prepare('UPDATE lots SET deleted_at = NULL WHERE purchase_id = ?').run(id);
+    // Symétrique de la suppression : les pierres parties à la Corbeille avec cet achat reviennent avec lui.
+    conn.prepare('UPDATE gemstones SET deleted_at = NULL WHERE source_purchase_id = ?').run(id);
   });
   run();
 }

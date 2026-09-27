@@ -193,6 +193,10 @@ export interface Purchase {
   notes?: string;
   documents?: PurchaseDocument[]; // documents archivés (en lecture)
   documentIds?: string[]; // documents à rattacher à l'enregistrement (en écriture)
+  locked?: boolean; // verrouillage volontaire : fournisseur, date et articles ne sont plus modifiables
+  lockedAt?: string;
+  verified?: boolean; // « Conforme à la facture » : marque informative, jamais bloquante, toujours réversible
+  verifiedAt?: string;
 }
 
 export interface Lot {

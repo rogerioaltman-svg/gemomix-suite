@@ -12,7 +12,7 @@ import dotenv from 'dotenv';
 import {
   getDb, DB_FILE_PATH,
   getAllGemstones, saveGemstone, deleteGemstone, getGemstoneImage, getLotImage,
-  getAllPurchases, savePurchase, deletePurchase, deleteLotsByPurchaseId, getNextPurchaseReference, getNextSubReference,
+  getAllPurchases, savePurchase, deletePurchase, lockPurchase, unlockPurchase, verifyPurchase, unverifyPurchase, deleteLotsByPurchaseId, getNextPurchaseReference, getNextSubReference,
   getAllLots, saveLot, deleteLot,
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
@@ -272,6 +272,30 @@ app.get('/api/purchases/next-reference', async (req, res) => {
 });
 
 // Module 7 : prochaine référence lot/pierre (n° facture/suffixe) sous un achat donné
+app.post('/api/purchases/:id/lock', async (req, res) => {
+  try { await lockPurchase(req.params.id); res.json({ success: true }); }
+  catch (error: any) { console.error("Error locking purchase:", error); res.status(400).json({ error: error.message || "Erreur lors du verrouillage." }); }
+});
+
+app.post('/api/purchases/:id/unlock', async (req, res) => {
+  try { await unlockPurchase(req.params.id); res.json({ success: true }); }
+  catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
+    console.error("Error unlocking purchase:", error);
+    res.status(400).json({ error: error.message || "Erreur lors du déverrouillage." });
+  }
+});
+
+app.post('/api/purchases/:id/verify', async (req, res) => {
+  try { await verifyPurchase(req.params.id); res.json({ success: true }); }
+  catch (error: any) { console.error("Error verifying purchase:", error); res.status(400).json({ error: error.message || "Erreur." }); }
+});
+
+app.post('/api/purchases/:id/unverify', async (req, res) => {
+  try { await unverifyPurchase(req.params.id); res.json({ success: true }); }
+  catch (error: any) { console.error("Error unverifying purchase:", error); res.status(400).json({ error: error.message || "Erreur." }); }
+});
+
 app.get('/api/purchases/:id/next-sub-reference', async (req, res) => {
   try {
     const reference = await getNextSubReference(req.params.id);
@@ -291,6 +315,7 @@ app.post('/api/purchases', async (req, res) => {
     await savePurchase(p);
     res.json({ success: true });
   } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error saving purchase:", error);
     res.status(500).json({ error: "Erreur lors de la sauvegarde d'achat." });
   }
@@ -301,9 +326,9 @@ app.delete('/api/purchases/:id', async (req, res) => {
   try {
     const { id } = req.params;
     await deletePurchase(id);
-    await deleteLotsByPurchaseId(id);
     res.json({ success: true });
   } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error deleting purchase:", error);
     res.status(500).json({ error: "Erreur lors de la suppression de la facture d'achat." });
   }
