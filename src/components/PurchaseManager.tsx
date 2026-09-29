@@ -2074,57 +2074,58 @@ export default function PurchaseManager({
                             </span>
                           )}
                         </div>
-                        {lockConfirmId === purchase.id ? (
-                          <div className="flex items-center gap-1.5 text-[11px]" onClick={e => e.stopPropagation()}>
-                            <span className="text-gray-300">Déverrouiller cet achat pour le corriger ?</span>
-                            <button type="button" id={`btn-lock-confirm-${purchase.id}`} onClick={() => handleUnlock(purchase)} disabled={lockBusyId === purchase.id}
-                              className="px-2 py-1 font-bold bg-amber-500/20 border border-amber-500/40 text-amber-100 rounded hover:bg-amber-500/30 disabled:opacity-50">
-                              {lockBusyId === purchase.id ? '…' : 'Confirmer'}
-                            </button>
-                            <button type="button" onClick={() => setLockConfirmId(null)} className="px-2 py-1 text-gray-400 border border-gray-700 rounded hover:text-white">Annuler</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            {purchase.locked && onUnlockPurchase && (
-                              <button
-                                id={`btn-toggle-lock-pur-${purchase.id}`}
-                                onClick={(e) => { e.stopPropagation(); setLockConfirmId(purchase.id); }}
-                                className="p-1 px-2 rounded text-xs flex items-center gap-1 transition-colors hover:bg-emerald-500/10 text-emerald-400"
-                                title="Déverrouiller pour corriger (fournisseur, date, articles) — se reverrouille au prochain enregistrement"
-                              >
-                                <Unlock className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            {!purchase.locked && (
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300" title="Déverrouillé : enregistrez pour reverrouiller">
-                                Déverrouillé
-                              </span>
-                            )}
-                            {!purchase.locked && (
-                              <button 
-                                id={`btn-edit-pur-${purchase.id}`}
-                                onClick={(e) => { e.stopPropagation(); handleStartEditPurchase(purchase); }}
-                                className="p-1 px-2 hover:bg-amber-500/10 text-amber-500 rounded text-xs flex items-center gap-1 transition-colors"
-                                title="Modifier cet achat"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            {!purchase.locked && (
-                              <button 
-                                id={`btn-delete-pur-${purchase.id}`}
-                                onClick={(e) => { e.stopPropagation(); onDeletePurchase(purchase.id); }}
-                                className="p-1 px-2 hover:bg-red-500/10 text-red-400 rounded text-xs flex items-center gap-1 transition-colors"
-                                title="Supprimer cet achat"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        <div className="relative">
+                            <div className="flex items-center gap-1">
+                              {purchase.locked && onUnlockPurchase && (
+                                <button
+                                  id={`btn-toggle-lock-pur-${purchase.id}`}
+                                  onClick={(e) => { e.stopPropagation(); setLockConfirmId(purchase.id); }}
+                                  className="p-1 px-2 rounded text-xs flex items-center gap-1 transition-colors hover:bg-emerald-500/10 text-emerald-400"
+                                  title="Déverrouiller pour corriger (fournisseur, date, articles) — se reverrouille au prochain enregistrement"
+                                >
+                                  <Unlock className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              {!purchase.locked && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300" title="Déverrouillé : enregistrez pour reverrouiller">
+                                  Déverrouillé
+                                </span>
+                              )}
+                              {!purchase.locked && (
+                                <button 
+                                  id={`btn-edit-pur-${purchase.id}`}
+                                  onClick={(e) => { e.stopPropagation(); handleStartEditPurchase(purchase); }}
+                                  className="p-1 px-2 hover:bg-amber-500/10 text-amber-500 rounded text-xs flex items-center gap-1 transition-colors"
+                                  title="Modifier cet achat"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              {!purchase.locked && (
+                                <button 
+                                  id={`btn-delete-pur-${purchase.id}`}
+                                  onClick={(e) => { e.stopPropagation(); onDeletePurchase(purchase.id); }}
+                                  className="p-1 px-2 hover:bg-red-500/10 text-red-400 rounded text-xs flex items-center gap-1 transition-colors"
+                                  title="Supprimer cet achat"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                        </div>
                       </div>
                     </div>
 
+                    {lockConfirmId === purchase.id && (
+                      <div className="px-4 py-2 bg-[#171d2b] border-t border-[#212a3d] flex flex-wrap items-center justify-end gap-3 text-[11px]" onClick={e => e.stopPropagation()}>
+                        <span className="text-gray-300">Déverrouiller cet achat pour le corriger ?</span>
+                        <button type="button" id={`btn-lock-confirm-${purchase.id}`} onClick={() => handleUnlock(purchase)} disabled={lockBusyId === purchase.id}
+                          className="px-2 py-1 font-bold bg-amber-500/20 border border-amber-500/40 text-amber-100 rounded hover:bg-amber-500/30 disabled:opacity-50">
+                          {lockBusyId === purchase.id ? '…' : 'Confirmer'}
+                        </button>
+                        <button type="button" onClick={() => setLockConfirmId(null)} className="px-2 py-1 text-gray-400 border border-gray-700 rounded hover:text-white">Annuler</button>
+                      </div>
+                    )}
                     {expanded && (<>
                     {/* Purchase notes if any */}
                     {purchase.notes && (
