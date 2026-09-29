@@ -479,8 +479,11 @@ export default function PurchaseManager({
     };
 
     if (editingArtIdx !== null) {
-      // Mise à jour de la ligne : on garde son identifiant s'il existe déjà
-      setTempArticles(tempArticles.map((a, i) => (i === editingArtIdx ? { ...built, ...(a as any).id ? { id: (a as any).id } : {} } : a)));
+      // Mise à jour de la ligne : on garde son identifiant et son groupe s'ils existent déjà
+      // (le groupe se modifie directement dans le bordereau, pas dans ce formulaire)
+      setTempArticles(tempArticles.map((a, i) => (i === editingArtIdx
+        ? { ...built, ...((a as any).id ? { id: (a as any).id } : {}), ...((a as any).group ? { group: (a as any).group } : {}) }
+        : a)));
       setEditingArtIdx(null);
     } else {
       setTempArticles([...tempArticles, built]);
@@ -495,56 +498,6 @@ export default function PurchaseManager({
     resetStoneDraft();
   };
 
-  // Nombre de groupes (lettre partagée par ≥ 2 lignes non encore enregistrées) prêts à fusionner
-  const groupableCount = Object.values(
-    tempArticles.reduce((acc: Record<string, number>, a: any) => {
-      const g = a._group?.trim();
-      if (g && !a.id) acc[g] = (acc[g] || 0) + 1;
-      return acc;
-    }, {})
-  ).filter((n: number) => n > 1).length;
-
-  // Fusionne les lignes qui partagent la même lettre de groupe en un seul article de colis :
-  // poids et montant additionnés, poids de chaque pièce conservé dans les notes, quantité = nb de pièces.
-  // Une ligne déjà enregistrée (id présent) ou sans groupe (ou seule dans son groupe) n'est jamais touchée.
-  const handleGroupArticles = () => {
-    const byGroup = new Map<string, number[]>();
-    tempArticles.forEach((a: any, idx) => {
-      const g = a._group?.trim();
-      if (!g || a.id) return;
-      byGroup.set(g, [...(byGroup.get(g) || []), idx]);
-    });
-    const merges = [...byGroup.entries()].filter(([, idxs]) => idxs.length > 1);
-    if (merges.length === 0) return;
-
-    const toRemove = new Set(merges.flatMap(([, idxs]) => idxs.slice(1)));
-    const next = tempArticles.map((a, idx) => {
-      const merge = merges.find(([, idxs]) => idxs[0] === idx);
-      if (!merge) return a;
-      const [group, idxs] = merge;
-      const rows = idxs.map(i => tempArticles[i] as any);
-      const weight = Number(rows.reduce((s, r) => s + (r.weight || 0), 0).toFixed(2));
-      const totalPrice = Number(rows.reduce((s, r) => s + (r.totalPrice || 0), 0).toFixed(2));
-      const names = [...new Set(rows.map(r => r.name).filter(Boolean))];
-      const weights = rows.map(r => (r.weight ?? 0).toFixed(2)).join(', ');
-      const ownNotes = [...new Set(rows.map(r => r.notes).filter(Boolean))];
-      return {
-        name: names.length === 1 ? names[0] : `Lot ${group} (${names[0]}…)`,
-        gemstoneType: rows[0].gemstoneType,
-        weight,
-        caratPrice: weight > 0 ? Number((totalPrice / weight).toFixed(2)) : 0,
-        totalPrice,
-        quantity: rows.reduce((s, r) => s + (r.quantity || 1), 0),
-        notes: [...ownNotes, `Poids individuels : ${weights} ct`].join(' — '),
-        entryMode: 'tri' as const,
-        _aiRead: rows.some(r => r._aiRead),
-        _group: undefined
-      };
-    }).filter((_, idx) => !toRemove.has(idx));
-    setTempArticles(next);
-    setEditingArtIdx(null);
-  };
-
   const handleRemoveTempArticle = (idx: number) => {
     setTempArticles(tempArticles.filter((_, i) => i !== idx));
     if (editingArtIdx !== null) {
@@ -556,9 +509,21 @@ export default function PurchaseManager({
   // Recharge une ligne du bordereau dans le formulaire d'article pour la corriger.
   // Réservé aux lignes non encore enregistrées : une ligne déjà enregistrée peut avoir des lots triés
   // ou une pierre en stock, qu'on ne modifie pas silencieusement depuis le bordereau.
+  // Une ligne reste modifiable (poids, prix, nom…) tant qu'aucun lot n'en a été trié et que sa
+  // pierre en entrée directe, si elle existe déjà, est toujours « Disponible ». Au-delà, le
+  // serveur refuserait de toute façon l'enregistrement (voir articleLockReason côté serveur).
+  const isArticleEditable = (a: any): boolean => {
+    if (!a.id) return true;
+    if (a.entryMode === 'stock') {
+      const gem = gemstones.find(g => g.sourceArticleId === a.id);
+      return !gem || gem.status === 'Disponible';
+    }
+    return !lots.some(l => l.purchaseArticleId === a.id);
+  };
+
   const handleEditTempArticle = (idx: number) => {
     const art: any = tempArticles[idx];
-    if (!art || art.id) return;
+    if (!art || !isArticleEditable(art)) return;
     setArtName(art.name);
     setArtType(art.gemstoneType);
     setArtWeight(String(art.weight));
@@ -1842,22 +1807,23 @@ export default function PurchaseManager({
                         {art.notes && <p className="text-[10px] text-gray-500 italic font-sans mt-0.5">"{art.notes}"</p>}
                       </div>
                       <div className="flex items-center gap-4">
-                        {!(art as any).id && (
-                          <div className="flex items-center gap-1" title="Lignes à fusionner ensemble : donnez-leur la même lettre, puis « Regrouper »">
-                            <span className="text-[9px] text-gray-500 uppercase">Groupe</span>
-                            <input
-                              id={`art-group-${idx}`}
-                              type="text"
-                              maxLength={8}
-                              value={(art as any)._group || ''}
-                              onChange={(e) => setTempArticles(prev => prev.map((a, i) => i === idx ? { ...a, _group: e.target.value.toUpperCase() } : a))}
-                              placeholder="—"
-                              className="w-10 px-1 py-1 bg-[#171e2c] border border-[#27354d] text-gray-200 text-center rounded uppercase"
-                            />
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1" title="Repère de regroupement inscrit sur la facture (ex: la lettre du fournisseur) — identifiant seulement, ne change ni le poids ni le prix de la ligne">
+                          <span className="text-[9px] text-gray-500 uppercase">Groupe</span>
+                          <input
+                            id={`art-group-${idx}`}
+                            type="text"
+                            maxLength={8}
+                            value={art.group || ''}
+                            onChange={(e) => {
+                              const group = e.target.value.toUpperCase() || undefined;
+                              setTempArticles(prev => prev.map((a, i) => i === idx ? { ...a, group } : a));
+                            }}
+                            placeholder="—"
+                            className="w-10 px-1 py-1 bg-[#171e2c] border border-[#27354d] text-gray-200 text-center rounded uppercase"
+                          />
+                        </div>
                         <span className="text-[#eedfa7] font-bold text-sm">{(art.weight * art.caratPrice).toLocaleString()} €</span>
-                        {!(art as any).id && (
+                        {isArticleEditable(art) ? (
                           <button
                             id={`btn-edit-tempart-${idx}`}
                             type="button"
@@ -1867,6 +1833,10 @@ export default function PurchaseManager({
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
+                        ) : (art as any).id && (
+                          <span className="p-1 text-gray-700" title="Déjà trié en lot (ou pierre non disponible) : poids et prix ne sont plus modifiables">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </span>
                         )}
                         <button
                           id={`btn-remove-tempart-${idx}`}
@@ -1880,19 +1850,6 @@ export default function PurchaseManager({
                     </div>
                   ))}
                   
-                  {groupableCount > 0 && (
-                    <div className="flex justify-end pr-4">
-                      <button
-                        type="button"
-                        id="btn-group-articles"
-                        onClick={handleGroupArticles}
-                        className="px-3 py-1.5 text-[11px] font-mono font-bold bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 rounded-lg"
-                      >
-                        Regrouper les lignes marquées ({groupableCount} groupe{groupableCount > 1 ? 's' : ''})
-                      </button>
-                    </div>
-                  )}
-
                   <div className="flex justify-end pr-4 text-xs mt-3 font-mono">
                     <span className="text-gray-400">Coût total du bordereau : </span>
                     <span className="text-emerald-400 font-bold ml-2 text-sm">
@@ -2183,7 +2140,14 @@ export default function PurchaseManager({
                             >
                               <div>
                                 <div className="flex justify-between items-start gap-2">
-                                  <h5 className="font-bold text-[#eedfa7] text-sm leading-tight">{article.name}</h5>
+                                  <h5 className="font-bold text-[#eedfa7] text-sm leading-tight">
+                                    {article.name}
+                                    {article.group && (
+                                      <span className="ml-1.5 text-[9px] font-mono px-1.5 py-0.5 rounded border border-sky-500/30 bg-sky-500/10 text-sky-300 align-middle" title="Repère de regroupement">
+                                        {article.group}
+                                      </span>
+                                    )}
+                                  </h5>
                                   <span className="text-[10px] bg-sky-500/10 text-sky-400 px-2 py-0.5 rounded font-bold font-mono">
                                     {article.gemstoneType}
                                   </span>

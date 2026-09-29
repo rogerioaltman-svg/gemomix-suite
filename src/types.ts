@@ -110,6 +110,8 @@ export interface PurchaseArticle {
   caratPrice: number; // buy price per carat in €
   totalPrice: number; // total cost in €
   quantity?: number; // nombre de pièces du colis, si connu (informatif : ne change rien au poids/prix)
+  group?: string; // lettre ou repère de regroupement (ex: celui inscrit à la main sur la facture) — purement
+  // identifiant : chaque ligne garde son propre poids et son propre prix, rien n'est jamais fusionné
   notes?: string;
   // Détails saisis à l'achat pour une pierre unique : servent uniquement à créer la
   // fiche pierre (puis retirés de l'achat : la fiche est la seule source de vérité)
