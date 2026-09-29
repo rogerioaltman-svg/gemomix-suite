@@ -184,6 +184,7 @@ function getConnection(): Database.Database {
   ensureSupplierReferenceColumn(db);
   ensurePurchaseLockedColumn(db);
   ensurePurchaseVerifiedColumn(db);
+  ensurePurchaseVatColumn(db);
   lockPreExistingPurchasesOnce(db);
   ensureDeletionLogTable(db);
   ensureInvoiceSnapshotColumns(db);
@@ -248,6 +249,16 @@ function ensurePurchaseVerifiedColumn(conn: Database.Database) {
   if (!cols.includes('verified_at')) {
     console.log('[SQLite] Migration : ajout de verified_at sur purchases...');
     conn.exec('ALTER TABLE purchases ADD COLUMN verified_at TEXT;');
+  }
+}
+
+// La TVA de l'achat : un seul montant global (comme sur la facture fournisseur), pas par ligne.
+// total_cost reste le HT (déjà la somme des articles) ; le TTC se calcule, il n'est pas stocké.
+function ensurePurchaseVatColumn(conn: Database.Database) {
+  const cols = (conn.pragma('table_info(purchases)') as any[]).map(c => c.name);
+  if (!cols.includes('vat_amount')) {
+    console.log('[SQLite] Migration : ajout de vat_amount sur purchases...');
+    conn.exec('ALTER TABLE purchases ADD COLUMN vat_amount REAL;');
   }
 }
 
@@ -606,6 +617,7 @@ function rowToPurchase(r: any): Purchase {
     date: r.date,
     status: r.status,
     totalCost: r.total_cost,
+    vatAmount: r.vat_amount ?? undefined,
     articles: JSON.parse(r.articles || '[]'),
     notes: r.notes ?? undefined,
     locked: !!r.locked_at,
@@ -619,8 +631,8 @@ function upsertPurchase(conn: Database.Database, p: Purchase) {
   // ON CONFLICT DO UPDATE (et non INSERT OR REPLACE, qui supprime puis réinsère
   // la ligne et déclencherait la cascade de suppression des lots de tri liés)
   conn.prepare(`
-    INSERT INTO purchases (id, reference, supplier_reference, no_supplier_invoice, supplier, date, status, total_cost, articles, notes)
-    VALUES (@id, @reference, @supplierReference, @noSupplierInvoice, @supplier, @date, @status, @totalCost, @articles, @notes)
+    INSERT INTO purchases (id, reference, supplier_reference, no_supplier_invoice, supplier, date, status, total_cost, vat_amount, articles, notes)
+    VALUES (@id, @reference, @supplierReference, @noSupplierInvoice, @supplier, @date, @status, @totalCost, @vatAmount, @articles, @notes)
     ON CONFLICT(id) DO UPDATE SET
       reference = excluded.reference,
       supplier_reference = excluded.supplier_reference,
@@ -629,6 +641,7 @@ function upsertPurchase(conn: Database.Database, p: Purchase) {
       date = excluded.date,
       status = excluded.status,
       total_cost = excluded.total_cost,
+      vat_amount = excluded.vat_amount,
       articles = excluded.articles,
       notes = excluded.notes
   `).run({
@@ -640,6 +653,7 @@ function upsertPurchase(conn: Database.Database, p: Purchase) {
     date: p.date ?? new Date().toISOString(),
     status: p.status ?? 'Incomplet',
     totalCost: p.totalCost ?? 0,
+    vatAmount: p.vatAmount !== undefined && p.vatAmount !== null ? p.vatAmount : null,
     articles: JSON.stringify(p.articles ?? []),
     notes: p.notes ?? null
   });
@@ -1260,7 +1274,7 @@ function assertPurchaseNotLocked(previous: Purchase, current: Purchase) {
   const sameArticles = JSON.stringify((previous.articles ?? []).map(artKey).sort()) === JSON.stringify((current.articles ?? []).map(artKey).sort());
   const sameHeader = (previous.supplier ?? '') === (current.supplier ?? '') && (previous.date ?? '') === (current.date ?? '')
     && (previous.supplierReference ?? '') === (current.supplierReference ?? '') && !!previous.noSupplierInvoice === !!current.noSupplierInvoice
-    && (previous.totalCost ?? 0) === (current.totalCost ?? 0);
+    && (previous.totalCost ?? 0) === (current.totalCost ?? 0) && (previous.vatAmount ?? 0) === (current.vatAmount ?? 0);
   if (!sameArticles || !sameHeader) {
     throw new InvoiceLockedError("Cet achat est verrouillé : seules les notes et l'ajout d'un document restent modifiables. Déverrouillez-le d'abord si une correction est vraiment nécessaire.");
   }

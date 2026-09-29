@@ -109,6 +109,7 @@ export interface PurchaseArticle {
   weight: number; // total weight in ct
   caratPrice: number; // buy price per carat in €
   totalPrice: number; // total cost in €
+  quantity?: number; // nombre de pièces du colis, si connu (informatif : ne change rien au poids/prix)
   notes?: string;
   // Détails saisis à l'achat pour une pierre unique : servent uniquement à créer la
   // fiche pierre (puis retirés de l'achat : la fiche est la seule source de vérité)
@@ -188,7 +189,8 @@ export interface Purchase {
   supplier: string;
   date: string;
   status: 'Incomplet' | 'Trié' | 'En cours';
-  totalCost: number;
+  totalCost: number; // total HT (somme des articles)
+  vatAmount?: number; // TVA de la facture fournisseur, un seul montant global (le TTC se déduit : totalCost + vatAmount)
   articles: PurchaseArticle[];
   notes?: string;
   documents?: PurchaseDocument[]; // documents archivés (en lecture)

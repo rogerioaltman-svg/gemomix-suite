@@ -146,6 +146,7 @@ export default function PurchaseManager({
     setSupplier(p.supplier);
     setPDate(p.date);
     setPNotes(p.notes || '');
+    setPVatAmount(p.vatAmount !== undefined ? String(p.vatAmount) : '');
     setSupplierRef(p.supplierReference || '');
     setNoSupplierInvoice(!!p.noSupplierInvoice);
     setTempArticles(p.articles || []);
@@ -186,6 +187,7 @@ export default function PurchaseManager({
 
   const [pDate, setPDate] = useState(new Date().toISOString().split('T')[0]);
   const [pNotes, setPNotes] = useState('');
+  const [pVatAmount, setPVatAmount] = useState('');
   const [supplierRef, setSupplierRef] = useState('');
   const [noSupplierInvoice, setNoSupplierInvoice] = useState(false);
   const [tempArticles, setTempArticles] = useState<Omit<PurchaseArticle, 'id'>[]>([]);
@@ -394,6 +396,7 @@ export default function PurchaseManager({
   const [artName, setArtName] = useState('');
   const [artType, setArtType] = useState('Saphir');
   const [artWeight, setArtWeight] = useState('');
+  const [artQuantity, setArtQuantity] = useState('');
   const [artCaratPrice, setArtCaratPrice] = useState('');
   const [artNotes, setArtNotes] = useState('');
   const [artDirectEntry, setArtDirectEntry] = useState(false);
@@ -467,6 +470,7 @@ export default function PurchaseManager({
         weight: weightNum,
         caratPrice: priceNum,
         totalPrice: Number((weightNum * priceNum).toFixed(2)),
+        quantity: parseInt(artQuantity, 10) || undefined,
         notes: artNotes,
         entryMode: artDirectEntry ? 'stock' : 'tri',
         ...(artDirectEntry && (artStoneCut.trim() || artStoneColor.trim() || artStoneClarity.trim() || artStoneImage)
@@ -484,10 +488,61 @@ export default function PurchaseManager({
 
     // Reset article form fields
     setArtName('');
+    setArtQuantity('');
     setArtWeight('');
     setArtCaratPrice('');
     setArtNotes('');
     resetStoneDraft();
+  };
+
+  // Nombre de groupes (lettre partagée par ≥ 2 lignes non encore enregistrées) prêts à fusionner
+  const groupableCount = Object.values(
+    tempArticles.reduce((acc: Record<string, number>, a: any) => {
+      const g = a._group?.trim();
+      if (g && !a.id) acc[g] = (acc[g] || 0) + 1;
+      return acc;
+    }, {})
+  ).filter((n: number) => n > 1).length;
+
+  // Fusionne les lignes qui partagent la même lettre de groupe en un seul article de colis :
+  // poids et montant additionnés, poids de chaque pièce conservé dans les notes, quantité = nb de pièces.
+  // Une ligne déjà enregistrée (id présent) ou sans groupe (ou seule dans son groupe) n'est jamais touchée.
+  const handleGroupArticles = () => {
+    const byGroup = new Map<string, number[]>();
+    tempArticles.forEach((a: any, idx) => {
+      const g = a._group?.trim();
+      if (!g || a.id) return;
+      byGroup.set(g, [...(byGroup.get(g) || []), idx]);
+    });
+    const merges = [...byGroup.entries()].filter(([, idxs]) => idxs.length > 1);
+    if (merges.length === 0) return;
+
+    const toRemove = new Set(merges.flatMap(([, idxs]) => idxs.slice(1)));
+    const next = tempArticles.map((a, idx) => {
+      const merge = merges.find(([, idxs]) => idxs[0] === idx);
+      if (!merge) return a;
+      const [group, idxs] = merge;
+      const rows = idxs.map(i => tempArticles[i] as any);
+      const weight = Number(rows.reduce((s, r) => s + (r.weight || 0), 0).toFixed(2));
+      const totalPrice = Number(rows.reduce((s, r) => s + (r.totalPrice || 0), 0).toFixed(2));
+      const names = [...new Set(rows.map(r => r.name).filter(Boolean))];
+      const weights = rows.map(r => (r.weight ?? 0).toFixed(2)).join(', ');
+      const ownNotes = [...new Set(rows.map(r => r.notes).filter(Boolean))];
+      return {
+        name: names.length === 1 ? names[0] : `Lot ${group} (${names[0]}…)`,
+        gemstoneType: rows[0].gemstoneType,
+        weight,
+        caratPrice: weight > 0 ? Number((totalPrice / weight).toFixed(2)) : 0,
+        totalPrice,
+        quantity: rows.reduce((s, r) => s + (r.quantity || 1), 0),
+        notes: [...ownNotes, `Poids individuels : ${weights} ct`].join(' — '),
+        entryMode: 'tri' as const,
+        _aiRead: rows.some(r => r._aiRead),
+        _group: undefined
+      };
+    }).filter((_, idx) => !toRemove.has(idx));
+    setTempArticles(next);
+    setEditingArtIdx(null);
   };
 
   const handleRemoveTempArticle = (idx: number) => {
@@ -507,6 +562,7 @@ export default function PurchaseManager({
     setArtName(art.name);
     setArtType(art.gemstoneType);
     setArtWeight(String(art.weight));
+    setArtQuantity(art.quantity ? String(art.quantity) : '');
     setArtCaratPrice(String(art.caratPrice));
     setArtNotes(art.notes || '');
     setArtDirectEntry(art.entryMode === 'stock');
@@ -523,6 +579,7 @@ export default function PurchaseManager({
   const cancelEditTempArticle = () => {
     setEditingArtIdx(null);
     setArtName('');
+    setArtQuantity('');
     setArtWeight('');
     setArtCaratPrice('');
     setArtNotes('');
@@ -559,6 +616,7 @@ export default function PurchaseManager({
       date: pDate,
       status: 'En cours',
       totalCost: Number(totalCost.toFixed(2)),
+      vatAmount: pVatAmount.trim() ? Number(parseFloat(pVatAmount).toFixed(2)) : undefined,
       articles: tempArticles.map((art, i) => {
         const { _aiRead, ...clean } = art as any; // le drapeau « à vérifier » ne sert qu'à l'écran
         return { ...clean, id: clean.id ? clean.id : `pa-${Date.now()}-${i}` };
@@ -576,7 +634,7 @@ export default function PurchaseManager({
     resetStoneDraft();
     setPurchaseRef('');
     setSupplier('');
-    setPNotes('');
+    setPNotes(''); setPVatAmount('');
     setTempArticles([]);
     setEditingArtIdx(null);
     setPurchaseDocs([]);
@@ -693,11 +751,12 @@ export default function PurchaseManager({
     const hit = l.gemstoneType ? gemstoneTypesList.find(x => normTxt(x) === normTxt(l.gemstoneType!)) : undefined;
     const weight = l.weightCt ?? 0;
     const caratPrice = l.pricePerCt ?? (l.amount !== undefined && weight > 0 ? Number((l.amount / weight).toFixed(2)) : 0);
-    const notes = [l.notes, l.gemstoneType && !hit ? `Variété lue : ${l.gemstoneType}` : '', l.kind !== 'pierre' && l.quantity && l.quantity > 1 ? `${l.quantity} pièces` : ''].filter(Boolean).join(' — ');
+    const notes = [l.notes, l.gemstoneType && !hit ? `Variété lue : ${l.gemstoneType}` : ''].filter(Boolean).join(' — ');
     // Pierre unique lue : entrée directe en stock, avec sa taille / couleur / pureté ; sinon colis à trier (l'utilisateur peut changer)
     const isStone = l.kind === 'pierre';
     return {
       name: l.description || 'Article', gemstoneType: hit ?? 'Autre', weight, caratPrice, totalPrice: Number((weight * caratPrice).toFixed(2)), notes,
+      quantity: !isStone ? l.quantity : undefined,
       entryMode: isStone ? 'stock' as const : 'tri' as const,
       ...(isStone && (l.cut || l.color || l.clarity) ? { stoneDetails: { cut: l.cut ?? '', color: l.color ?? '', clarity: l.clarity ?? '' } } : {}),
       _aiRead: true
@@ -711,6 +770,7 @@ export default function PurchaseManager({
     if (!noSupplierInvoice && !supplierRef.trim() && x.invoiceNumber) { setSupplierRef(x.invoiceNumber); clearError('supplierRef'); filled.supplierRef = true; }
     if (x.invoiceDate) { setPDate(x.invoiceDate); filled.date = true; }
     if (!pNotes.trim() && x.notes) { setPNotes(x.notes); filled.notes = true; }
+    if (!pVatAmount.trim() && x.vatAmount !== undefined) { setPVatAmount(String(x.vatAmount)); filled.vatAmount = true; }
     if (tempArticles.length === 0 && x.lines.length > 0) { setTempArticles(linesFromExtraction(x.lines)); clearError('articles'); filled.lines = true; }
     setAiFilled(filled);
     setExtractionResult(res);
@@ -745,7 +805,7 @@ export default function PurchaseManager({
     setSupplierRef('');
     setNoSupplierInvoice(false);
     resetStoneDraft();
-    setPNotes('');
+    setPNotes(''); setPVatAmount('');
     setTempArticles([]);
     try {
       const { reference } = await fetch('/api/purchases/next-reference').then(r => r.json());
@@ -1282,7 +1342,7 @@ export default function PurchaseManager({
                 resetStoneDraft();
     setNoSupplierInvoice(false);
     resetStoneDraft();
-                setPNotes('');
+                setPNotes(''); setPVatAmount('');
                 setTempArticles([]);
                 setEditingArtIdx(null);
                 discardUnlinkedDocs();
@@ -1562,7 +1622,7 @@ export default function PurchaseManager({
               : <FieldError field="articles" />}
 
             <div className="grid grid-cols-6 @3xl:grid-cols-12 gap-3 text-xs items-start">
-              <div className="col-span-6 @3xl:col-span-5 space-y-1">
+              <div className="col-span-6 @3xl:col-span-4 space-y-1">
                 <label className="block text-gray-400 font-mono text-[10px] uppercase">Désignation de l'Article / Colis</label>
                 <input
                   id="art-name-input"
@@ -1575,9 +1635,9 @@ export default function PurchaseManager({
                 <FieldError field="artName" />
               </div>
 
-              <div className="col-span-2 @3xl:col-span-3 space-y-1">
+              <div className="col-span-3 @3xl:col-span-2 space-y-1">
                 <label className="block text-gray-400 font-mono text-[10px] uppercase">Structure Minérale</label>
-                <select 
+                <select
                   id="art-type-select"
                   value={artType}
                   onChange={(e) => setArtType(e.target.value)}
@@ -1587,6 +1647,20 @@ export default function PurchaseManager({
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="col-span-3 @3xl:col-span-2 space-y-1">
+                <label className="block text-gray-400 font-mono text-[10px] uppercase" title="Nombre de pièces du colis, si connu — n'influence pas le poids ni le prix">Quantité (pièces)</label>
+                <input
+                  id="art-qty-input"
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={artQuantity}
+                  onChange={(e) => setArtQuantity(e.target.value)}
+                  placeholder="ex: 14"
+                  className="w-full px-2.5 py-1.5 bg-[#171e2c] border border-[#27354d] text-white font-mono rounded"
+                />
               </div>
 
               <div className="col-span-2 space-y-1">
@@ -1758,10 +1832,30 @@ export default function PurchaseManager({
                           <span>Poids : <b className="text-[#eedfa7]">{art.weight} ct</b></span>
                           <span>•</span>
                           <span>Prix/ct : <b>{art.caratPrice} €/ct</b></span>
+                          {!!(art as any).quantity && (
+                            <>
+                              <span>•</span>
+                              <span>Qté : <b className="text-gray-300 font-sans">{(art as any).quantity} pcs</b></span>
+                            </>
+                          )}
                         </div>
                         {art.notes && <p className="text-[10px] text-gray-500 italic font-sans mt-0.5">"{art.notes}"</p>}
                       </div>
                       <div className="flex items-center gap-4">
+                        {!(art as any).id && (
+                          <div className="flex items-center gap-1" title="Lignes à fusionner ensemble : donnez-leur la même lettre, puis « Regrouper »">
+                            <span className="text-[9px] text-gray-500 uppercase">Groupe</span>
+                            <input
+                              id={`art-group-${idx}`}
+                              type="text"
+                              maxLength={8}
+                              value={(art as any)._group || ''}
+                              onChange={(e) => setTempArticles(prev => prev.map((a, i) => i === idx ? { ...a, _group: e.target.value.toUpperCase() } : a))}
+                              placeholder="—"
+                              className="w-10 px-1 py-1 bg-[#171e2c] border border-[#27354d] text-gray-200 text-center rounded uppercase"
+                            />
+                          </div>
+                        )}
                         <span className="text-[#eedfa7] font-bold text-sm">{(art.weight * art.caratPrice).toLocaleString()} €</span>
                         {!(art as any).id && (
                           <button
@@ -1786,6 +1880,19 @@ export default function PurchaseManager({
                     </div>
                   ))}
                   
+                  {groupableCount > 0 && (
+                    <div className="flex justify-end pr-4">
+                      <button
+                        type="button"
+                        id="btn-group-articles"
+                        onClick={handleGroupArticles}
+                        className="px-3 py-1.5 text-[11px] font-mono font-bold bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 rounded-lg"
+                      >
+                        Regrouper les lignes marquées ({groupableCount} groupe{groupableCount > 1 ? 's' : ''})
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex justify-end pr-4 text-xs mt-3 font-mono">
                     <span className="text-gray-400">Coût total du bordereau : </span>
                     <span className="text-emerald-400 font-bold ml-2 text-sm">
@@ -1795,6 +1902,28 @@ export default function PurchaseManager({
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="flex flex-wrap items-end justify-end gap-4 text-xs font-mono">
+            <div className="space-y-1">
+              <label htmlFor="pur-vat-amount" className="block text-gray-400 uppercase">Montant TVA (€)</label>
+              <input
+                id="pur-vat-amount"
+                type="number"
+                step="0.01"
+                min="0"
+                value={pVatAmount}
+                onChange={(e) => { setPVatAmount(e.target.value); clearAi('vatAmount'); }}
+                placeholder="0.00"
+                className={`w-28 px-2.5 py-1.5 bg-[#171e2c] border border-[#27354d] text-gray-300 rounded text-right focus:border-[#b4985c] ${hl('vatAmount')}`}
+              />
+            </div>
+            <div className="text-right pb-1.5">
+              <span className="text-gray-500 block">TOTAL TTC</span>
+              <span className="text-[#eedfa7] font-bold text-sm">
+                {(tempArticles.reduce((sum, a) => sum + a.totalPrice, 0) + (parseFloat(pVatAmount) || 0)).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+              </span>
+            </div>
           </div>
 
           {!noSupplierInvoice && (
@@ -1819,7 +1948,7 @@ export default function PurchaseManager({
                 resetStoneDraft();
     setNoSupplierInvoice(false);
     resetStoneDraft();
-                setPNotes('');
+                setPNotes(''); setPVatAmount('');
                 setTempArticles([]);
                 setEditingArtIdx(null);
                 discardUnlinkedDocs();
@@ -1969,8 +2098,13 @@ export default function PurchaseManager({
 
                       <div className="flex items-center gap-3 font-mono">
                         <div className="text-right">
-                          <span className="text-[9px] text-gray-500 block">TOTAL FACTURE</span>
+                          <span className="text-[9px] text-gray-500 block">TOTAL FACTURE {purchase.vatAmount ? '(HT)' : ''}</span>
                           <span className="text-emerald-400 font-extrabold text-sm">{purchase.totalCost.toLocaleString()} €</span>
+                          {!!purchase.vatAmount && (
+                            <span className="text-[9px] text-gray-500 block" title={`TVA : ${purchase.vatAmount.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`}>
+                              TTC {(purchase.totalCost + purchase.vatAmount).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+                            </span>
+                          )}
                         </div>
                         {lockConfirmId === purchase.id ? (
                           <div className="flex items-center gap-1.5 text-[11px]" onClick={e => e.stopPropagation()}>
