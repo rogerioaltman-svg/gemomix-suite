@@ -8,6 +8,7 @@ import PageHeader, { btnPrimary, btnSecondary } from './PageHeader';
 import { Purchase, PurchaseArticle, PurchaseDocument, Lot, Supplier, Gemstone, AiSettingsPublic, InvoiceExtractionResult, ExtractedLine } from '../types';
 import PhotoCapture from './PhotoCapture';
 import LotThumbnail from './LotThumbnail';
+import LabelSheet from './LabelSheet';
 import SupplierFormModal from './SupplierFormModal';
 import MovementHistory from './MovementHistory';
 import {
@@ -32,6 +33,7 @@ import {
   Check,
   Pencil,
   Lock,
+  Printer,
   Unlock,
   Paperclip,
   History, UserPlus } from 'lucide-react';
@@ -58,6 +60,7 @@ interface PurchaseManagerProps {
   expandPurchaseId?: string | null; // rouvre cet achat déplié (retour depuis la fiche d'une pierre)
   onExpandPurchaseHandled?: () => void;
   onUnlockPurchase?: (id: string) => Promise<boolean> | boolean | void;
+  onPurchasesChanged?: () => void; // recharge la liste des achats après une modification faite directement côté serveur
 }
 
 export default function PurchaseManager({
@@ -78,7 +81,8 @@ export default function PurchaseManager({
   onTriageHandled,
   expandPurchaseId,
   onExpandPurchaseHandled,
-  onUnlockPurchase
+  onUnlockPurchase,
+  onPurchasesChanged
 }: PurchaseManagerProps) {
   // Tab within this component: 'purchases' or 'all-lots'
   const [managerTab, setManagerTab] = useState<'purchases' | 'all-lots'>('purchases');
@@ -297,7 +301,7 @@ export default function PurchaseManager({
     setActiveTriageArticle({ purchase, article });
     setLastSavedLot(null);
     setLotRef('…');
-    fetchNextSubReference(purchase.id).then(setLotRef);
+    fetchNextSubReference(purchase.id, article.id).then(setLotRef);
   }, [triageRequest]);
 
   // Retour depuis la fiche d'une pierre (« Compléter la fiche ») : rouvre l'achat déplié comme avant
@@ -419,10 +423,37 @@ export default function PurchaseManager({
   };
 
   // Triage Workspace state: active PurchaseArticle under triaging
+  // Préfixe des références de sous-lots (défini une fois par groupe) et étiquettes à imprimer
+  const [prefixDraft, setPrefixDraft] = useState('R');
+  const [prefixMsg, setPrefixMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showLabels, setShowLabels] = useState(false);
   const [activeTriageArticle, setActiveTriageArticle] = useState<{
     purchase: Purchase;
     article: PurchaseArticle;
   } | null>(null);
+
+  useEffect(() => {
+    if (!activeTriageArticle) return;
+    const live = purchases.find(p => p.id === activeTriageArticle.purchase.id)?.articles.find(a => a.id === activeTriageArticle.article.id);
+    setPrefixDraft(live?.lotPrefix || 'R');
+    setPrefixMsg(null);
+    setShowLabels(false);
+  }, [activeTriageArticle?.article.id]);
+
+  const savePrefix = async () => {
+    if (!activeTriageArticle) return;
+    const { purchase, article } = activeTriageArticle;
+    const res = await fetch(`/api/purchases/${purchase.id}/articles/${article.id}/lot-prefix`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prefix: prefixDraft }) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setPrefixMsg({ ok: false, text: body.error || (res.status === 404 ? 'Le serveur ne connaît pas cette action : redémarrez-le pour charger la mise à jour.' : `Préfixe refusé (erreur ${res.status}).`) });
+      return;
+    }
+    setPrefixMsg({ ok: true, text: 'Préfixe enregistré pour ce groupe.' });
+    onPurchasesChanged?.();
+    setLotRef(await fetchNextSubReference(purchase.id, article.id));
+  };
+
 
   // Form state for NEW LOT under active triage article
   const [lotRef, setLotRef] = useState('');
@@ -443,9 +474,9 @@ export default function PurchaseManager({
 
   // Module 7 : la référence du lot (n° facture d'achat / suffixe, ex "1/A") est
   // toujours attribuée par le serveur. On récupère un aperçu avant enregistrement.
-  const fetchNextSubReference = async (purchaseId: string): Promise<string> => {
+  const fetchNextSubReference = async (purchaseId: string, articleId?: string): Promise<string> => {
     try {
-      const { reference } = await fetch(`/api/purchases/${purchaseId}/next-sub-reference`).then(r => r.json());
+      const { reference } = await fetch(`/api/purchases/${purchaseId}/next-sub-reference${articleId ? `?articleId=${encodeURIComponent(articleId)}` : ''}`).then(r => r.json());
       return reference || '';
     } catch {
       return ''; // Le serveur attribuera la référence à l'enregistrement
@@ -679,7 +710,7 @@ export default function PurchaseManager({
     // Clear active lot form ; la réf suivante (attribuée par le serveur) est
     // pré-proposée, focus sur le poids
     setLotRef('…');
-    fetchNextSubReference(purchase.id).then(setLotRef);
+    fetchNextSubReference(purchase.id, article.id).then(setLotRef);
     setLotWeight('');
     setLotQty('');
     setLotSize('');
@@ -956,6 +987,30 @@ export default function PurchaseManager({
                 </div>
               </div>
             </div>
+          </div>
+
+          <div id="triage-labels-bar" className="bg-[#121620] border border-[#212a3d] rounded-xl p-3 flex flex-wrap items-center gap-3 text-xs">
+            {(() => {
+              const live = purchases.find(p => p.id === activeTriageArticle.purchase.id) ?? activeTriageArticle.purchase;
+              const grp = activeTriageArticle.article.group;
+              const groupArticles = live.articles.filter(a => grp ? a.group === grp : a.id === activeTriageArticle.article.id);
+              const groupLots = lots.filter(l => l.purchaseId === live.id && groupArticles.some(a => a.id === l.purchaseArticleId));
+              const locked = groupLots.length > 0;
+              return (
+                <>
+                  <label className="text-gray-400 font-mono uppercase text-[10px]" htmlFor="lot-prefix-input">Préfixe des sous-lots{grp ? ` (groupe ${grp})` : ''}</label>
+                  <input id="lot-prefix-input" value={prefixDraft} maxLength={6} disabled={locked} onChange={e => setPrefixDraft(e.target.value.toUpperCase())}
+                    title={locked ? 'Des sous-lots existent déjà : le préfixe ne peut plus changer' : 'Une fois par groupe, ex. R → 1/A-R001'}
+                    className="w-20 px-2 py-1 bg-[#171e2c] border border-[#27354d] rounded text-white font-mono uppercase disabled:opacity-50" />
+                  <button type="button" id="btn-save-prefix" disabled={locked} onClick={savePrefix} className="px-2.5 py-1 border border-[#27354d] rounded text-gray-200 hover:text-white disabled:opacity-40">Enregistrer</button>
+                  {prefixMsg && <span className={prefixMsg.ok ? 'text-emerald-400' : 'text-red-400'}>{prefixMsg.text}</span>}
+                  <button type="button" id="btn-open-labels" onClick={() => setShowLabels(true)} className="ml-auto px-3 py-1.5 bg-[#bda165]/15 border border-[#bda165]/40 text-[#e0b760] font-bold rounded flex items-center gap-1">
+                    <Printer className="h-3.5 w-3.5" /> Étiquettes
+                  </button>
+                  {showLabels && <LabelSheet purchase={live} articles={groupArticles} lots={groupLots} onClose={() => setShowLabels(false)} />}
+                </>
+              );
+            })()}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
@@ -1279,6 +1334,8 @@ export default function PurchaseManager({
               )}
             </div>
           </div>
+
+
         </div>
       )}
 
@@ -2231,7 +2288,7 @@ export default function PurchaseManager({
                                       setActiveTriageArticle({ purchase, article });
                                       setLotRef('…');
                                       setLastSavedLot(null);
-                                      setLotRef(await fetchNextSubReference(purchase.id));
+                                      setLotRef(await fetchNextSubReference(purchase.id, article.id));
                                     }}
                                     className="w-full py-2 bg-[#1b2333] hover:bg-[#202a3d] border border-gray-700 hover:border-gray-600 text-xs font-mono font-bold text-[#eedfa7] rounded-lg transition-all flex items-center justify-center gap-1"
                                   >

@@ -744,6 +744,7 @@ export default function App() {
             triageRequest={triageRequest}
             onTriageHandled={() => setTriageRequest(null)}
             onUnlockPurchase={handleUnlockPurchase}
+            onPurchasesChanged={() => { fetch('/api/purchases').then(r => r.json()).then(setPurchases).catch(() => {}); }}
           />
         )}
 
