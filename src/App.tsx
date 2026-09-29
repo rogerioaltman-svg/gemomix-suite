@@ -611,7 +611,7 @@ export default function App() {
                 className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border flex items-center gap-1.5 shrink-0 ${selectedTab === 'contacts' ? 'bg-[#bda165] text-black border-[#bda165]' : 'bg-transparent text-gray-300 border-transparent hover:bg-[#161d2d] hover:text-white'}`}
               >
                 <Users className="h-3.5 w-3.5 text-blue-400" />
-                <span className="whitespace-nowrap">Tiers & CSV</span>
+                <span className="whitespace-nowrap">Clients & Fournisseurs</span>
               </button>
               <button
                 id="tab-identifier-mobile"

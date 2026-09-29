@@ -30,7 +30,7 @@ const METIER_ITEMS: NavItem[] = [
   { id: 'tab-purchases-sidebar', tab: 'purchases', label: 'Achats', icon: <ShoppingBag className="h-4 w-4 text-emerald-400" /> },
   { id: 'tab-bijoux-sidebar', tab: 'bijoux', label: 'Bijoux', icon: <Sparkles className="h-4 w-4 text-pink-400" /> },
   { id: 'tab-invoices-sidebar', tab: 'invoices', label: 'Facturation', icon: <Receipt className="h-4 w-4 text-amber-400" /> },
-  { id: 'tab-contacts-sidebar', tab: 'contacts', label: 'Tiers & CSV', icon: <Users className="h-4 w-4 text-blue-400" /> }
+  { id: 'tab-contacts-sidebar', tab: 'contacts', label: 'Clients & Fournisseurs', icon: <Users className="h-4 w-4 text-blue-400" /> }
 ];
 
 const OUTILS_ITEMS: NavItem[] = [

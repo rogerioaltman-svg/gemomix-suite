@@ -14,7 +14,7 @@ interface ClientFormModalProps {
   onClose: () => void;
 }
 
-// Fenêtre unique de saisie d'un client, partagée par « Tiers & CSV » et la Facturation
+// Fenêtre unique de saisie d'un client, partagée par « Clients & Fournisseurs » et la Facturation
 export default function ClientFormModal({ client, onSave, onClose }: ClientFormModalProps) {
   const [form, setForm] = useState({
     name: client?.name || '',

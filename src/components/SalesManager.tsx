@@ -57,7 +57,7 @@ export default function SalesManager({
   const [restockOnCredit, setRestockOnCredit] = useState(true);
   const [pendingCreditOf, setPendingCreditOf] = useState<string | null>(null); // avoir en cours de création : on l'ouvre dès qu'il apparaît
 
-  // Création d'un client sans quitter la facturation : même fenêtre que « Tiers & CSV »
+  // Création d'un client sans quitter la facturation : même fenêtre que « Clients & Fournisseurs »
   const [isQuickClientModalOpen, setIsQuickClientModalOpen] = useState(false);
 
   // Identité du vendeur pour l'impression : la copie figée à l'émission si elle existe, sinon

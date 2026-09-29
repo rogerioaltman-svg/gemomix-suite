@@ -133,7 +133,7 @@ export default function PurchaseManager({
     </p>
   );
 
-  // Fournisseurs proposés : uniquement ceux de l'annuaire (Tiers & CSV). Un fournisseur
+  // Fournisseurs proposés : uniquement ceux de l'annuaire (Clients & Fournisseurs). Un fournisseur
   // saisi à la main dans un ancien achat reste sélectionnable tant que cet achat est ouvert.
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
   const directorySuppliers = useMemo(() => {
