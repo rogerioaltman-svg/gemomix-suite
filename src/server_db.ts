@@ -1486,8 +1486,50 @@ function generateSubReference(conn: Database.Database, purchaseId: string): stri
   return `${prefix}${numberToLetterSuffix(max + 1)}`;
 }
 
-export async function getNextSubReference(purchaseId: string): Promise<string> {
-  return generateSubReference(getConnection(), purchaseId);
+// Référence d'un sous-lot trié : <n° achat>/<groupe>-<préfixe><nnn>, ex. 1/A-R001. Le groupe (lettre de la
+// ligne) et le préfixe (défini une fois par groupe, R par défaut) sont facultatifs/paramétrables ; le numéro
+// est attribué par le serveur, continu sur tout le groupe et jamais réutilisé (lots archivés compris).
+const LOT_PREFIX_RE = /^[A-Za-z0-9]{1,6}$/;
+
+function generateLotReference(conn: Database.Database, purchaseId: string, articleId?: string): string {
+  if (!articleId) return generateSubReference(conn, purchaseId);
+  const row = conn.prepare('SELECT reference, articles FROM purchases WHERE id = ?').get(purchaseId) as { reference: string; articles: string } | undefined;
+  if (!row) return generateSubReference(conn, purchaseId);
+  let art: PurchaseArticle | undefined;
+  try { art = (JSON.parse(row.articles || '[]') as PurchaseArticle[]).find(a => a.id === articleId); } catch { /* articles illisibles */ }
+  const base = `${row.reference}/${art?.group ? art.group + '-' : ''}${art?.lotPrefix || 'R'}`;
+  let max = 0;
+  for (const r of conn.prepare('SELECT reference FROM lots WHERE purchase_id = ?').all(purchaseId) as { reference: string }[]) {
+    if (r.reference.startsWith(base)) {
+      const tail = r.reference.slice(base.length);
+      if (/^\d+$/.test(tail)) max = Math.max(max, parseInt(tail, 10));
+    }
+  }
+  return base + String(max + 1).padStart(3, '0');
+}
+
+export async function getNextSubReference(purchaseId: string, articleId?: string): Promise<string> {
+  return generateLotReference(getConnection(), purchaseId, articleId);
+}
+
+// Fixe le préfixe des sous-lots pour tout un groupe (toutes les lignes de l'achat qui partagent sa lettre),
+// tant qu'aucun sous-lot actif n'en existe : changer de préfixe en route mélangerait deux séries de références.
+// Les sous-lots archivés ne comptent pas (leurs références ne sont jamais réutilisées : la nouvelle série ne peut pas les heurter).
+export async function setLotPrefix(purchaseId: string, articleId: string, prefix: string): Promise<void> {
+  const p = String(prefix ?? '').trim();
+  if (!LOT_PREFIX_RE.test(p)) throw new Error('Préfixe invalide : 1 à 6 lettres ou chiffres.');
+  const conn = getConnection();
+  const row = conn.prepare('SELECT articles FROM purchases WHERE id = ?').get(purchaseId) as { articles: string } | undefined;
+  if (!row) throw new Error('Achat introuvable.');
+  const articles = JSON.parse(row.articles || '[]') as PurchaseArticle[];
+  const target = articles.find(a => a.id === articleId);
+  if (!target) throw new Error('Article introuvable.');
+  const scope = articles.filter(a => a.id === articleId || (!!target.group && a.group === target.group));
+  const ids = scope.map(a => a.id);
+  const used = (conn.prepare('SELECT purchase_article_id FROM lots WHERE purchase_id = ? AND deleted_at IS NULL').all(purchaseId) as { purchase_article_id: string }[]).some(l => ids.includes(l.purchase_article_id));
+  if (used) throw new InvoiceLockedError('Des sous-lots existent déjà pour ce groupe : le préfixe ne peut plus changer.');
+  for (const a of scope) a.lotPrefix = p;
+  conn.prepare('UPDATE purchases SET articles = ? WHERE id = ?').run(JSON.stringify(articles), purchaseId);
 }
 
 export async function deletePurchase(id: string): Promise<void> {
@@ -1545,7 +1587,7 @@ export async function saveLot(l: Lot): Promise<void> {
     const isNew = !existing;
     const finalLot: Lot = {
       ...l,
-      reference: existing ? existing.reference : generateSubReference(conn, l.purchaseId)
+      reference: existing ? existing.reference : generateLotReference(conn, l.purchaseId, l.purchaseArticleId)
     };
     upsertLot(conn, finalLot);
 

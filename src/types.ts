@@ -110,6 +110,7 @@ export interface PurchaseArticle {
   caratPrice: number; // buy price per carat in €
   totalPrice: number; // total cost in €
   quantity?: number; // nombre de pièces du colis, si connu (informatif : ne change rien au poids/prix)
+  lotPrefix?: string; // préfixe des références de sous-lots de ce groupe (ex: R → 1/A-R001), défini une fois
   group?: string; // lettre ou repère de regroupement (ex: celui inscrit à la main sur la facture) — purement
   // identifiant : chaque ligne garde son propre poids et son propre prix, rien n'est jamais fusionné
   notes?: string;

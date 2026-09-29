@@ -12,7 +12,7 @@ import dotenv from 'dotenv';
 import {
   getDb, DB_FILE_PATH,
   getAllGemstones, saveGemstone, deleteGemstone, getGemstoneImage, getLotImage,
-  getAllPurchases, savePurchase, deletePurchase, lockPurchase, unlockPurchase, deleteLotsByPurchaseId, getNextPurchaseReference, getNextSubReference,
+  getAllPurchases, savePurchase, deletePurchase, lockPurchase, unlockPurchase, setLotPrefix, deleteLotsByPurchaseId, getNextPurchaseReference, getNextSubReference,
   getAllLots, saveLot, deleteLot,
   getAllSuppliers, saveSupplier, deleteSupplier,
   getAllClients, saveClient, deleteClient,
@@ -272,6 +272,14 @@ app.get('/api/purchases/next-reference', async (req, res) => {
 });
 
 // Module 7 : prochaine référence lot/pierre (n° facture/suffixe) sous un achat donné
+app.post('/api/purchases/:id/articles/:articleId/lot-prefix', async (req, res) => {
+  try { await setLotPrefix(req.params.id, req.params.articleId, req.body?.prefix); res.json({ success: true }); }
+  catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
+    res.status(400).json({ error: error.message || "Préfixe refusé." });
+  }
+});
+
 app.post('/api/purchases/:id/lock', async (req, res) => {
   try { await lockPurchase(req.params.id); res.json({ success: true }); }
   catch (error: any) { console.error("Error locking purchase:", error); res.status(400).json({ error: error.message || "Erreur lors du verrouillage." }); }
@@ -288,7 +296,7 @@ app.post('/api/purchases/:id/unlock', async (req, res) => {
 
 app.get('/api/purchases/:id/next-sub-reference', async (req, res) => {
   try {
-    const reference = await getNextSubReference(req.params.id);
+    const reference = await getNextSubReference(req.params.id, typeof req.query.articleId === 'string' ? req.query.articleId : undefined);
     res.json({ reference });
   } catch (error: any) {
     console.error("Error generating next sub-reference:", error);
