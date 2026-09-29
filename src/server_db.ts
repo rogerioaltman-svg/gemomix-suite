@@ -1321,11 +1321,11 @@ export async function savePurchase(p: Purchase): Promise<void> {
 // Seuls les changements réels sont propagés : une valeur corrigée à la main n'est jamais écrasée
 // par un simple réenregistrement de l'achat.
 function propagatePurchaseChanges(conn: Database.Database, previous: Purchase, current: Purchase) {
-  const findGem = conn.prepare('SELECT id, reference FROM gemstones WHERE source_article_id = ?');
+  const findGem = conn.prepare('SELECT id, reference, weight, recuttings FROM gemstones WHERE source_article_id = ?');
   const supplierChanged = (previous.supplier ?? '') !== (current.supplier ?? '');
   for (const art of current.articles ?? []) {
     if (art.entryMode !== 'stock') continue;
-    const gem = findGem.get(art.id) as { id: string; reference: string } | undefined;
+    const gem = findGem.get(art.id) as { id: string; reference: string; weight: number; recuttings: string | null } | undefined;
     if (!gem) continue;
     if (supplierChanged) {
       conn.prepare('UPDATE gemstones SET dealer = ? WHERE id = ?').run(current.supplier ?? '', gem.id);
@@ -1333,6 +1333,18 @@ function propagatePurchaseChanges(conn: Database.Database, previous: Purchase, c
         `Achat ${current.reference} modifié — fournisseur : ${previous.supplier || '(vide)'} → ${current.supplier || '(vide)'}`);
     }
     const before = (previous.articles ?? []).find(a => a.id === art.id);
+    // Poids corrigé sur l'achat : la fiche suit tant qu'elle porte encore le poids d'origine (ni retaillée, ni ajustée à la main)
+    if (before && Math.abs((before.weight ?? 0) - (art.weight ?? 0)) > 0.0001) {
+      const recut = gem.recuttings && (JSON.parse(gem.recuttings) as unknown[]).length > 0;
+      if (!recut && Math.abs(gem.weight - (before.weight ?? 0)) < 0.0001) {
+        conn.prepare('UPDATE gemstones SET weight = ? WHERE id = ?').run(art.weight ?? 0, gem.id);
+        logMovement(conn, 'AJUSTEMENT', 'gemstone', gem.id, gem.reference, (art.weight ?? 0) - gem.weight, undefined,
+          `Achat ${current.reference} modifié — poids : ${before.weight ?? 0} → ${art.weight ?? 0} ct`);
+      } else {
+        logMovement(conn, 'AJUSTEMENT', 'gemstone', gem.id, gem.reference, undefined, undefined,
+          `Achat ${current.reference} : poids de la ligne corrigé (${before.weight ?? 0} → ${art.weight ?? 0} ct), mais la pierre garde son poids propre (${gem.weight} ct, retaillée ou ajustée) — non modifiée`);
+      }
+    }
     if (before && (before.totalPrice ?? 0) !== (art.totalPrice ?? 0)) {
       conn.prepare('UPDATE gemstones SET cost_price = ? WHERE id = ?').run(art.totalPrice ?? 0, gem.id);
       logMovement(conn, 'AJUSTEMENT', 'gemstone', gem.id, gem.reference, undefined, art.totalPrice ?? 0,
@@ -1585,6 +1597,10 @@ export async function saveLot(l: Lot): Promise<void> {
     // jamais modifiable ensuite.
     const existing = conn.prepare('SELECT reference FROM lots WHERE id = ?').get(l.id) as { reference: string } | undefined;
     const isNew = !existing;
+    // Trier suppose des poids et prix confirmés : un achat déverrouillé (correction en cours) doit d'abord être réenregistré.
+    if (isNew && !(conn.prepare('SELECT locked_at FROM purchases WHERE id = ?').get(l.purchaseId) as { locked_at: string | null } | undefined)?.locked_at) {
+      throw new InvoiceLockedError("Achat déverrouillé : enregistrez-le pour confirmer poids et prix avant de trier.");
+    }
     const finalLot: Lot = {
       ...l,
       reference: existing ? existing.reference : generateLotReference(conn, l.purchaseId, l.purchaseArticleId)
