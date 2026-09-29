@@ -1487,7 +1487,7 @@ function generateSubReference(conn: Database.Database, purchaseId: string): stri
 }
 
 // Référence d'un sous-lot trié : <n° achat>/<groupe>-<préfixe><nnn>, ex. 1/A-R001. Le groupe (lettre de la
-// ligne) et le préfixe (défini une fois par groupe, R par défaut) sont facultatifs/paramétrables ; le numéro
+// ligne) et le préfixe (défini une fois par groupe, aucun par défaut) sont facultatifs/paramétrables ; le numéro
 // est attribué par le serveur, continu sur tout le groupe et jamais réutilisé (lots archivés compris).
 const LOT_PREFIX_RE = /^[A-Za-z0-9]{1,6}$/;
 
@@ -1497,7 +1497,7 @@ function generateLotReference(conn: Database.Database, purchaseId: string, artic
   if (!row) return generateSubReference(conn, purchaseId);
   let art: PurchaseArticle | undefined;
   try { art = (JSON.parse(row.articles || '[]') as PurchaseArticle[]).find(a => a.id === articleId); } catch { /* articles illisibles */ }
-  const base = `${row.reference}/${art?.group ? art.group + '-' : ''}${art?.lotPrefix || 'R'}`;
+  const base = `${row.reference}/${art?.group ? art.group + '-' : ''}${art?.lotPrefix || ''}`;
   let max = 0;
   for (const r of conn.prepare('SELECT reference FROM lots WHERE purchase_id = ?').all(purchaseId) as { reference: string }[]) {
     if (r.reference.startsWith(base)) {
