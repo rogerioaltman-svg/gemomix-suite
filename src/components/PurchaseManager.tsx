@@ -1806,7 +1806,7 @@ export default function PurchaseManager({
                         </div>
                         {art.notes && <p className="text-[10px] text-gray-500 italic font-sans mt-0.5">"{art.notes}"</p>}
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-4 shrink-0">
                         <div className="flex items-center gap-1" title="Repère de regroupement inscrit sur la facture (ex: la lettre du fournisseur) — identifiant seulement, ne change ni le poids ni le prix de la ligne">
                           <span className="text-[9px] text-gray-500 uppercase">Groupe</span>
                           <input
@@ -1822,7 +1822,7 @@ export default function PurchaseManager({
                             className="w-10 px-1 py-1 bg-[#171e2c] border border-[#27354d] text-gray-200 text-center rounded uppercase"
                           />
                         </div>
-                        <span className="text-[#eedfa7] font-bold text-sm">{(art.weight * art.caratPrice).toLocaleString()} €</span>
+                        <span className="text-[#eedfa7] font-bold text-sm whitespace-nowrap">{(art.weight * art.caratPrice).toLocaleString()} €</span>
                         {isArticleEditable(art) ? (
                           <button
                             id={`btn-edit-tempart-${idx}`}
