@@ -448,6 +448,37 @@ export default function App() {
     return ok;
   };
 
+  // Retire un colis pas encore trié directement depuis l'Inventaire (erreur de saisie, doublon…) :
+  // déverrouille l'achat si besoin, retire la ligne, réenregistre (ce qui reverrouille automatiquement).
+  // Si c'était le seul article, l'achat entier est supprimé plutôt que laissé vide.
+  const handleDeleteColis = (purchaseId: string, articleId: string, articleName: string) => {
+    const purchase = purchases.find(p => p.id === purchaseId);
+    if (!purchase) return;
+    const isLastArticle = purchase.articles.length === 1;
+    setConfirmDialog({
+      title: isLastArticle ? "Supprimer l'achat" : 'Retirer le colis',
+      message: isLastArticle
+        ? `« ${articleName} » est le seul article de l'achat "${purchase.reference}" (${purchase.supplier}). Le retirer supprime l'achat entier. Vous pourrez tout restaurer depuis la Corbeille.`
+        : `« ${articleName} » sera retiré de l'achat "${purchase.reference}" (${purchase.supplier}).`,
+      onConfirm: async () => {
+        if (isLastArticle) {
+          if (await callApi(`/api/purchases/${purchaseId}`, 'DELETE')) {
+            setPurchases(purchases.filter(p => p.id !== purchaseId));
+            setLots(lots.filter(l => l.purchaseId !== purchaseId));
+            const gList = await fetch('/api/gemstones').then(r => r.json());
+            setGemstones(Array.isArray(gList) ? gList.map(normalizeGemstone) : []);
+          }
+        } else {
+          if (purchase.locked) await callApi(`/api/purchases/${purchaseId}/unlock`, 'POST');
+          const articles = purchase.articles.filter(a => a.id !== articleId);
+          const totalCost = Number(articles.reduce((sum, a) => sum + a.totalPrice, 0).toFixed(2));
+          await handleSavePurchase({ ...purchase, articles, totalCost });
+        }
+        setConfirmDialog(null);
+      }
+    });
+  };
+
   const handleDeletePurchase = (id: string) => {
     const purchase = purchases.find(p => p.id === id);
     if (!purchase) return;
@@ -651,6 +682,7 @@ export default function App() {
             onNewGem={() => openGemForm(null)}
             onNavigateToTab={setSelectedTab}
             onOpenTriage={(purchaseId, articleId) => { setTriageRequest({ purchaseId, articleId }); setSelectedTab('purchases'); }}
+            onDeleteColis={handleDeleteColis}
             onDeleteGem={handleDeleteGemstone}
             onDeleteLot={handleDeleteLot}
           />

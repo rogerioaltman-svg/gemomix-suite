@@ -29,6 +29,7 @@ interface StockListProps {
   onNewGem: () => void;
   onNavigateToTab: (tab: string) => void;
   onOpenTriage?: (purchaseId: string, articleId: string) => void; // ouvre directement le tri d'un colis
+  onDeleteColis?: (purchaseId: string, articleId: string, articleName: string) => void; // retire un colis pas encore trié de son achat
   onDeleteGem: (id: string) => void;
   onDeleteLot: (id: string) => void;
 }
@@ -41,6 +42,7 @@ export default function StockList({
   onNewGem,
   onNavigateToTab,
   onOpenTriage,
+  onDeleteColis,
   onDeleteGem,
   onDeleteLot
 }: StockListProps) {
@@ -623,7 +625,21 @@ export default function StockList({
                             <span>Trier</span>
                             <Layers className="h-3 w-3" />
                           </button>
-                        ) : (
+                        ) : null}
+                        {item.type === 'purchase_article' && onDeleteColis && (
+                          <button
+                            title="Retirer ce colis de l'achat"
+                            onClick={() => {
+                              const owner = purchases.find(p => p.articles?.some(a => a.id === item.id));
+                              const art = owner?.articles.find(a => a.id === item.id);
+                              if (owner && art) onDeleteColis(owner.id, item.id, art.name);
+                            }}
+                            className="text-gray-500 hover:text-red-400 transition-colors p-1"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {item.type !== 'stone' && item.type !== 'purchase_article' && (
                           <>
                             <button 
                               title="Gérer le Triage"
