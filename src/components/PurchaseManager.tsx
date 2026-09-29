@@ -2048,7 +2048,7 @@ export default function PurchaseManager({
               </select>
               <label className="flex items-center gap-1.5 text-xs text-gray-300 cursor-pointer px-2">
                 <input id="purchases-todo" type="checkbox" checked={regTodoOnly} onChange={e => setRegTodoOnly(e.target.checked)} />
-                À traiter uniquement
+                Colis à trier
               </label>
             </div>
           )}
