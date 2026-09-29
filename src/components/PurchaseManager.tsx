@@ -36,6 +36,9 @@ import {
   Paperclip,
   History, UserPlus } from 'lucide-react';
 
+// Montants en euros : toujours deux décimales (jamais trois, jamais aucune), comme sur une facture
+const fmtEur = (n: number) => (n ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 interface PurchaseManagerProps {
   purchases: Purchase[];
   lots: Lot[];
@@ -521,14 +524,17 @@ export default function PurchaseManager({
     return !lots.some(l => l.purchaseArticleId === a.id);
   };
 
+  // Ce qui manque encore sur une ligne (lue par l'IA ou saisie) : signalé dès l'affichage, pas seulement à l'enregistrement
+  const missingParts = (a: any): string[] => [!(a.weight > 0) ? 'poids' : '', !(a.caratPrice > 0) ? 'prix' : ''].filter(Boolean);
+
   const handleEditTempArticle = (idx: number) => {
     const art: any = tempArticles[idx];
     if (!art || !isArticleEditable(art)) return;
     setArtName(art.name);
     setArtType(art.gemstoneType);
-    setArtWeight(String(art.weight));
+    setArtWeight(art.weight > 0 ? String(art.weight) : '');
     setArtQuantity(art.quantity ? String(art.quantity) : '');
-    setArtCaratPrice(String(art.caratPrice));
+    setArtCaratPrice(art.caratPrice > 0 ? String(art.caratPrice) : '');
     setArtNotes(art.notes || '');
     setArtDirectEntry(art.entryMode === 'stock');
     setShowStoneDetails(!!art.stoneDetails);
@@ -560,8 +566,8 @@ export default function PurchaseManager({
     if (!noSupplierInvoice && !supplierRef.trim()) errs.supplierRef = "N° requis, ou cochez « sans facture »";
     if (tempArticles.length === 0) errs.articles = "Ajoutez au moins un article avant d'enregistrer";
     else {
-      const badIdx = tempArticles.findIndex(a => !(a.weight > 0) || !(a.caratPrice > 0));
-      if (badIdx >= 0) errs.articles = `Ligne ${badIdx + 1} : poids ou prix à compléter`;
+      const bad = tempArticles.map((a, i) => (missingParts(a).length ? i + 1 : 0)).filter(Boolean);
+      if (bad.length) errs.articles = bad.length === 1 ? `Ligne ${bad[0]} : poids ou prix à compléter` : `${bad.length} lignes à compléter (poids ou prix) : n° ${bad.join(', ')}`;
     }
     if (Object.keys(errs).length > 0) {
       showErrors(errs, errs.purchaseRef ? 'pur-ref'
@@ -909,7 +915,7 @@ export default function PurchaseManager({
                   {activeTriageArticle.article.gemstoneType}
                 </span>
                 <span className="text-[11px] text-gray-400 font-mono">
-                  {activeTriageArticle.article.totalPrice.toLocaleString()} € ({activeTriageArticle.article.caratPrice} €/ct)
+                  {fmtEur(activeTriageArticle.article.totalPrice)} € ({activeTriageArticle.article.caratPrice} €/ct)
                 </span>
               </div>
               {activeTriageArticle.article.notes && (
@@ -1530,9 +1536,9 @@ export default function PurchaseManager({
                     {(extractionResult.extraction.totalExclTax !== undefined || extractionResult.extraction.totalInclTax !== undefined) && (
                       <p className="text-gray-400">
                         Totaux lus{extractionResult.extraction.currency ? ` (${extractionResult.extraction.currency})` : ''} :{' '}
-                        {extractionResult.extraction.totalExclTax !== undefined && <>HT <b className="text-gray-200">{extractionResult.extraction.totalExclTax.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</b> </>}
-                        {extractionResult.extraction.vatAmount !== undefined && <>· TVA <b className="text-gray-200">{extractionResult.extraction.vatAmount.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</b> </>}
-                        {extractionResult.extraction.totalInclTax !== undefined && <>· TTC <b className="text-gray-200">{extractionResult.extraction.totalInclTax.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</b></>}
+                        {extractionResult.extraction.totalExclTax !== undefined && <>HT <b className="text-gray-200">{fmtEur(extractionResult.extraction.totalExclTax)}</b> </>}
+                        {extractionResult.extraction.vatAmount !== undefined && <>· TVA <b className="text-gray-200">{fmtEur(extractionResult.extraction.vatAmount)}</b> </>}
+                        {extractionResult.extraction.totalInclTax !== undefined && <>· TTC <b className="text-gray-200">{fmtEur(extractionResult.extraction.totalInclTax)}</b></>}
                       </p>
                     )}
                     {extractionResult.extraction.lines.length > 0 && (
@@ -1779,9 +1785,14 @@ export default function PurchaseManager({
                 <span className="text-[10px] font-mono uppercase text-gray-500 block mb-2">Bordereau temporaire des articles saisis :</span>
                 <div className="space-y-2">
                   {tempArticles.map((art, idx) => (
-                    <div key={idx} className={`flex justify-between items-center bg-black/30 p-2.5 rounded-lg border font-mono text-xs text-gray-300 ${editingArtIdx === idx ? 'border-amber-500/60' : 'border-gray-800'}`}>
+                    <div key={idx} className={`flex justify-between items-center bg-black/30 p-2.5 rounded-lg border font-mono text-xs text-gray-300 ${editingArtIdx === idx ? 'border-amber-500/60' : missingParts(art).length ? 'border-red-500/50' : 'border-gray-800'}`}>
                       <div>
                         <span className="font-bold text-white font-sans text-sm">{art.name}</span>
+                        {missingParts(art).length > 0 && (
+                          <span className="ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border bg-red-500/10 text-red-300 border-red-500/40" title="Introuvable sur la facture : à compléter à la main (crayon) avant d'enregistrer">
+                            {missingParts(art).join(' et ').replace(/^./, c => c.toUpperCase())} à compléter
+                          </span>
+                        )}
                         {(art as any)._aiRead && (
                           <span className="ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-300 border-amber-500/30" title="Lue sur la facture : à vérifier (modifiez la ligne pour la valider)">à vérifier</span>
                         )}
@@ -1822,7 +1833,7 @@ export default function PurchaseManager({
                             className="w-10 px-1 py-1 bg-[#171e2c] border border-[#27354d] text-gray-200 text-center rounded uppercase"
                           />
                         </div>
-                        <span className="text-[#eedfa7] font-bold text-sm whitespace-nowrap">{(art.weight * art.caratPrice).toLocaleString()} €</span>
+                        <span className="text-[#eedfa7] font-bold text-sm whitespace-nowrap">{fmtEur(art.totalPrice)} €</span>
                         {isArticleEditable(art) ? (
                           <button
                             id={`btn-edit-tempart-${idx}`}
@@ -1853,7 +1864,7 @@ export default function PurchaseManager({
                   <div className="flex justify-end pr-4 text-xs mt-3 font-mono">
                     <span className="text-gray-400">Coût total du bordereau : </span>
                     <span className="text-emerald-400 font-bold ml-2 text-sm">
-                      {tempArticles.reduce((sum, a) => sum + a.totalPrice, 0).toLocaleString()} €
+                      {fmtEur(tempArticles.reduce((sum, a) => sum + a.totalPrice, 0))} €
                     </span>
                   </div>
                 </div>
@@ -1878,7 +1889,7 @@ export default function PurchaseManager({
             <div className="text-right pb-1.5">
               <span className="text-gray-500 block">TOTAL TTC</span>
               <span className="text-[#eedfa7] font-bold text-sm">
-                {(tempArticles.reduce((sum, a) => sum + a.totalPrice, 0) + (parseFloat(pVatAmount) || 0)).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+                {fmtEur(tempArticles.reduce((sum, a) => sum + a.totalPrice, 0) + (parseFloat(pVatAmount) || 0))} €
               </span>
             </div>
           </div>
@@ -1960,7 +1971,7 @@ export default function PurchaseManager({
               <span>Registre d'Acquisitions de Joaillerie</span>
             </h3>
             <span className="text-[10px] text-gray-400 font-mono">
-              {filteredPurchases.length !== purchases.length ? 'Total de la sélection' : 'Total cumulé des achats'}: <b>{filteredPurchases.reduce((sum, p) => sum + p.totalCost, 0).toLocaleString()} €</b>
+              {filteredPurchases.length !== purchases.length ? 'Total de la sélection' : 'Total cumulé des achats'}: <b>{fmtEur(filteredPurchases.reduce((sum, p) => sum + p.totalCost, 0))} €</b>
             </span>
           </div>
 
@@ -2056,10 +2067,10 @@ export default function PurchaseManager({
                       <div className="flex items-center gap-3 font-mono">
                         <div className="text-right">
                           <span className="text-[9px] text-gray-500 block">TOTAL FACTURE {purchase.vatAmount ? '(HT)' : ''}</span>
-                          <span className="text-emerald-400 font-extrabold text-sm">{purchase.totalCost.toLocaleString()} €</span>
+                          <span className="text-emerald-400 font-extrabold text-sm">{fmtEur(purchase.totalCost)} €</span>
                           {!!purchase.vatAmount && (
-                            <span className="text-[9px] text-gray-500 block" title={`TVA : ${purchase.vatAmount.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €`}>
-                              TTC {(purchase.totalCost + purchase.vatAmount).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €
+                            <span className="text-[9px] text-gray-500 block" title={`TVA : ${fmtEur(purchase.vatAmount)} €`}>
+                              TTC {fmtEur(purchase.totalCost + purchase.vatAmount)} €
                             </span>
                           )}
                         </div>
@@ -2155,7 +2166,7 @@ export default function PurchaseManager({
                                 <div className="mt-2 grid grid-cols-3 gap-1 font-mono text-[10px] text-gray-400">
                                   <div>Poids du colis:<b className="text-white">{article.weight} ct</b></div>
                                   <div>Carat: <b className="text-white">{article.caratPrice} €/ct</b></div>
-                                  <div>Total: <b className="text-[#eedfa7]">{article.totalPrice.toLocaleString()} €</b></div>
+                                  <div>Total: <b className="text-[#eedfa7]">{fmtEur(article.totalPrice)} €</b></div>
                                 </div>
                                 {article.notes && (
                                   <p className="text-[10px] text-gray-500 italic mt-1.5">"{article.notes}"</p>
