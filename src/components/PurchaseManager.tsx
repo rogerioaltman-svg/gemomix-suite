@@ -296,7 +296,7 @@ export default function PurchaseManager({
     const purchase = purchases.find(p => p.id === triageRequest.purchaseId);
     const article = purchase?.articles.find(a => a.id === triageRequest.articleId);
     onTriageHandled?.();
-    if (!purchase || !article) return;
+    if (!purchase || !article || !purchase.locked) return; // achat déverrouillé : à réenregistrer avant de trier
     setManagerTab('purchases');
     setActiveTriageArticle({ purchase, article });
     setLastSavedLot(null);
@@ -2288,13 +2288,15 @@ export default function PurchaseManager({
                                   {/* Triage Trigger action btn */}
                                   <button
                                     id={`btn-triage-${article.id}`}
+                                    disabled={!purchase.locked}
+                                    title={purchase.locked ? undefined : 'Achat déverrouillé : enregistrez-le pour confirmer poids et prix avant de trier'}
                                     onClick={async () => {
                                       setActiveTriageArticle({ purchase, article });
                                       setLotRef('…');
                                       setLastSavedLot(null);
                                       setLotRef(await fetchNextSubReference(purchase.id, article.id));
                                     }}
-                                    className="w-full py-2 bg-[#1b2333] hover:bg-[#202a3d] border border-gray-700 hover:border-gray-600 text-xs font-mono font-bold text-[#eedfa7] rounded-lg transition-all flex items-center justify-center gap-1"
+                                    className="w-full py-2 bg-[#1b2333] hover:bg-[#202a3d] border border-gray-700 hover:border-gray-600 text-xs font-mono font-bold text-[#eedfa7] rounded-lg transition-all flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                                   >
                                     <span>🛠️ Organiser & Trier en Lots ({subLots.length})</span>
                                     <ChevronRight className="h-4 w-4" />

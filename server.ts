@@ -353,6 +353,7 @@ app.post('/api/lots', async (req, res) => {
     await saveLot(l);
     res.json({ success: true });
   } catch (error: any) {
+    if (error instanceof InvoiceLockedError) return res.status(409).json({ error: error.message });
     console.error("Error saving lot:", error);
     res.status(500).json({ error: "Erreur lors de la sauvegarde du sachet de tri." });
   }

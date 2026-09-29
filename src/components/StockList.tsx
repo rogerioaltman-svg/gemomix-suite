@@ -615,12 +615,13 @@ export default function StockList({
                           </>
                         ) : item.type === 'purchase_article' ? (
                           <button 
-                            title="Trier ce colis brut d'achat"
+                            title={purchases.find(p => p.articles?.some(a => a.id === item.id))?.locked === false ? 'Achat déverrouillé : enregistrez-le pour confirmer poids et prix avant de trier' : "Trier ce colis brut d'achat"}
+                            disabled={purchases.find(p => p.articles?.some(a => a.id === item.id))?.locked === false}
                             onClick={() => {
                               const owner = purchases.find(p => p.articles?.some(a => a.id === item.id));
                               if (owner && onOpenTriage) onOpenTriage(owner.id, item.id); else onNavigateToTab('purchases');
                             }}
-                            className="px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500 hover:text-black hover:border-cyan-500 rounded text-[10px] font-mono font-bold text-cyan-400 transition-all flex items-center gap-1"
+                            className="px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500 hover:text-black hover:border-cyan-500 rounded text-[10px] font-mono font-bold text-cyan-400 transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
                             <span>Trier</span>
                             <Layers className="h-3 w-3" />
