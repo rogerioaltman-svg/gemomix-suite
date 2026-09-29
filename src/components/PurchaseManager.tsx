@@ -424,7 +424,7 @@ export default function PurchaseManager({
 
   // Triage Workspace state: active PurchaseArticle under triaging
   // Préfixe des références de sous-lots (défini une fois par groupe) et étiquettes à imprimer
-  const [prefixDraft, setPrefixDraft] = useState('R');
+  const [prefixDraft, setPrefixDraft] = useState('');
   const [prefixMsg, setPrefixMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [showLabels, setShowLabels] = useState(false);
   const [activeTriageArticle, setActiveTriageArticle] = useState<{
@@ -435,7 +435,7 @@ export default function PurchaseManager({
   useEffect(() => {
     if (!activeTriageArticle) return;
     const live = purchases.find(p => p.id === activeTriageArticle.purchase.id)?.articles.find(a => a.id === activeTriageArticle.article.id);
-    setPrefixDraft(live?.lotPrefix || 'R');
+    setPrefixDraft(live?.lotPrefix || '');
     setPrefixMsg(null);
     setShowLabels(false);
   }, [activeTriageArticle?.article.id]);
@@ -999,10 +999,10 @@ export default function PurchaseManager({
               return (
                 <>
                   <label className="text-gray-400 font-mono uppercase text-[10px]" htmlFor="lot-prefix-input">Préfixe des sous-lots{grp ? ` (groupe ${grp})` : ''}</label>
-                  <input id="lot-prefix-input" value={prefixDraft} maxLength={6} disabled={locked} onChange={e => setPrefixDraft(e.target.value.toUpperCase())}
+                  <input id="lot-prefix-input" value={prefixDraft} maxLength={6} disabled={locked} placeholder="ex: R" onChange={e => setPrefixDraft(e.target.value.toUpperCase())}
                     title={locked ? 'Des sous-lots existent déjà : le préfixe ne peut plus changer' : 'Une fois par groupe, ex. R → 1/A-R001'}
                     className="w-20 px-2 py-1 bg-[#171e2c] border border-[#27354d] rounded text-white font-mono uppercase disabled:opacity-50" />
-                  <button type="button" id="btn-save-prefix" disabled={locked} onClick={savePrefix} className="px-2.5 py-1 border border-[#27354d] rounded text-gray-200 hover:text-white disabled:opacity-40">Enregistrer</button>
+                  <button type="button" id="btn-save-prefix" disabled={locked || !prefixDraft.trim()} onClick={savePrefix} className="px-2.5 py-1 border border-[#27354d] rounded text-gray-200 hover:text-white disabled:opacity-40">Enregistrer</button>
                   {prefixMsg && <span className={prefixMsg.ok ? 'text-emerald-400' : 'text-red-400'}>{prefixMsg.text}</span>}
                   <button type="button" id="btn-open-labels" onClick={() => setShowLabels(true)} className="ml-auto px-3 py-1.5 bg-[#bda165]/15 border border-[#bda165]/40 text-[#e0b760] font-bold rounded flex items-center gap-1">
                     <Printer className="h-3.5 w-3.5" /> Étiquettes
@@ -1842,78 +1842,82 @@ export default function PurchaseManager({
                 <span className="text-[10px] font-mono uppercase text-gray-500 block mb-2">Bordereau temporaire des articles saisis :</span>
                 <div className="space-y-2">
                   {tempArticles.map((art, idx) => (
-                    <div key={idx} className={`flex justify-between items-center bg-black/30 p-2.5 rounded-lg border font-mono text-xs text-gray-300 ${editingArtIdx === idx ? 'border-amber-500/60' : missingParts(art).length ? 'border-red-500/50' : 'border-gray-800'}`}>
-                      <div>
-                        <span className="font-bold text-white font-sans text-sm">{art.name}</span>
-                        {missingParts(art).length > 0 && (
-                          <span className="ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border bg-red-500/10 text-red-300 border-red-500/40" title="Introuvable sur la facture : à compléter à la main (crayon) avant d'enregistrer">
-                            {missingParts(art).join(' et ').replace(/^./, c => c.toUpperCase())} à compléter
-                          </span>
-                        )}
-                        {(art as any)._aiRead && (
-                          <span className="ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-300 border-amber-500/30" title="Lue sur la facture : à vérifier (modifiez la ligne pour la valider)">à vérifier</span>
-                        )}
-                        <span className={`ml-2 text-[9px] font-mono px-1.5 py-0.5 rounded border ${art.entryMode === 'stock' ? 'bg-[#bda165]/10 text-[#e0b760] border-[#bda165]/30' : 'bg-sky-500/10 text-sky-400 border-sky-500/20'}`}>
-                          {art.entryMode === 'stock' ? '💎 Stock direct' : '📦 À trier'}
-                        </span>
-                        {art.stoneDetails?.image && (
-                          <span className="ml-1.5 text-[9px] font-mono px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">📷 photo</span>
-                        )}
-                        <div className="text-[10px] text-gray-400 mt-1 flex items-center gap-3">
-                          <span>Catégorie : <b className="text-gray-300 font-sans">{art.gemstoneType}</b></span>
-                          <span>•</span>
-                          <span>Poids : <b className="text-[#eedfa7]">{art.weight} ct</b></span>
-                          <span>•</span>
-                          <span>Prix/ct : <b>{art.caratPrice} €/ct</b></span>
-                          {!!(art as any).quantity && (
-                            <>
-                              <span>•</span>
-                              <span>Qté : <b className="text-gray-300 font-sans">{(art as any).quantity} pcs</b></span>
-                            </>
-                          )}
+                    <div key={idx} className={`@container bg-black/30 p-2.5 rounded-lg border border-l-4 font-mono text-xs text-gray-300 ${editingArtIdx === idx ? 'border-amber-500/60' : missingParts(art).length ? 'border-red-500/50' : 'border-gray-800'} ${(art as any)._aiRead && editingArtIdx !== idx && !missingParts(art).length ? '!border-l-amber-400' : ''}`}>
+                      <div className="grid gap-2 @xl:grid-cols-[1fr_auto] @xl:items-center">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-bold text-white font-sans text-sm break-words min-w-0">{art.name}</span>
+                            {missingParts(art).length > 0 && (
+                              <span className="whitespace-nowrap text-[9px] font-mono px-1.5 py-0.5 rounded border bg-red-500/10 text-red-300 border-red-500/40" title="Introuvable sur la facture : à compléter à la main (crayon) avant d'enregistrer">
+                                {missingParts(art).join(' et ').replace(/^./, c => c.toUpperCase())} à compléter
+                              </span>
+                            )}
+                            {(art as any)._aiRead && (
+                              <span className="whitespace-nowrap text-[9px] font-mono px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-300 border-amber-500/30" title="Lue sur la facture : à vérifier (modifiez la ligne pour la valider)">
+                                ⚠<span className="hidden @md:inline"> à vérifier</span>
+                              </span>
+                            )}
+                            <span
+                              className={`whitespace-nowrap text-[9px] font-mono px-1.5 py-0.5 rounded border ${art.entryMode === 'stock' ? 'bg-[#bda165]/10 text-[#e0b760] border-[#bda165]/30' : 'bg-sky-500/10 text-sky-400 border-sky-500/20'}`}
+                              title={art.entryMode === 'stock' ? 'Stock direct : pierre unique entrée directement en stock' : 'À trier : colis à répartir en lots'}
+                            >
+                              {art.entryMode === 'stock' ? '💎' : '📦'}<span className="hidden @md:inline">{art.entryMode === 'stock' ? ' Stock direct' : ' À trier'}</span>
+                            </span>
+                            {art.stoneDetails?.image && (
+                              <span className="whitespace-nowrap text-[9px] font-mono px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">📷<span className="hidden @md:inline"> photo</span></span>
+                            )}
+                          </div>
+                          <dl className="mt-1.5 grid grid-cols-2 @md:grid-cols-4 gap-x-3 gap-y-1 text-[10px]">
+                            <div className="min-w-0"><dt className="text-gray-500">Catégorie</dt><dd className="text-gray-300 font-sans font-bold truncate">{art.gemstoneType}</dd></div>
+                            <div><dt className="text-gray-500">Poids</dt><dd className="text-[#eedfa7] font-bold whitespace-nowrap">{art.weight} ct</dd></div>
+                            <div><dt className="text-gray-500">Prix/ct</dt><dd className="text-gray-200 font-bold whitespace-nowrap">{art.caratPrice} €/ct</dd></div>
+                            {!!(art as any).quantity && <div><dt className="text-gray-500">Qté</dt><dd className="text-gray-300 font-bold whitespace-nowrap">{(art as any).quantity} pcs</dd></div>}
+                          </dl>
+                          {art.notes && <p className="text-[10px] text-gray-500 italic font-sans mt-1 break-words">"{art.notes}"</p>}
                         </div>
-                        {art.notes && <p className="text-[10px] text-gray-500 italic font-sans mt-0.5">"{art.notes}"</p>}
-                      </div>
-                      <div className="flex items-center gap-4 shrink-0">
-                        <div className="flex items-center gap-1" title="Repère de regroupement inscrit sur la facture (ex: la lettre du fournisseur) — identifiant seulement, ne change ni le poids ni le prix de la ligne">
-                          <span className="text-[9px] text-gray-500 uppercase">Groupe</span>
-                          <input
-                            id={`art-group-${idx}`}
-                            type="text"
-                            maxLength={8}
-                            value={art.group || ''}
-                            onChange={(e) => {
-                              const group = e.target.value.toUpperCase() || undefined;
-                              setTempArticles(prev => prev.map((a, i) => i === idx ? { ...a, group } : a));
-                            }}
-                            placeholder="—"
-                            className="w-10 px-1 py-1 bg-[#171e2c] border border-[#27354d] text-gray-200 text-center rounded uppercase"
-                          />
+                        <div className="flex items-center justify-between gap-3 border-t border-gray-800 pt-2 @xl:border-t-0 @xl:pt-0 @xl:justify-end">
+                          <div className="flex items-center gap-1" title="Repère de regroupement inscrit sur la facture (ex: la lettre du fournisseur) — identifiant seulement, ne change ni le poids ni le prix de la ligne">
+                            <span className="text-[9px] text-gray-500 uppercase">Groupe</span>
+                            <input
+                              id={`art-group-${idx}`}
+                              type="text"
+                              maxLength={8}
+                              value={art.group || ''}
+                              onChange={(e) => {
+                                const group = e.target.value.toUpperCase() || undefined;
+                                setTempArticles(prev => prev.map((a, i) => i === idx ? { ...a, group } : a));
+                              }}
+                              placeholder="—"
+                              className="w-10 px-1 py-1 bg-[#171e2c] border border-[#27354d] text-gray-200 text-center rounded uppercase"
+                            />
+                          </div>
+                          <span className="text-[#eedfa7] font-bold text-sm whitespace-nowrap">{fmtEur(art.totalPrice)} €</span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isArticleEditable(art) ? (
+                              <button
+                                id={`btn-edit-tempart-${idx}`}
+                                type="button"
+                                onClick={() => handleEditTempArticle(idx)}
+                                title="Modifier cette ligne"
+                                className="p-1 hover:bg-amber-500/10 text-amber-400 rounded"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                            ) : (art as any).id && (
+                              <span className="p-1 text-gray-700" title="Déjà trié en lot (ou pierre non disponible) : poids et prix ne sont plus modifiables">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </span>
+                            )}
+                            <button
+                              id={`btn-remove-tempart-${idx}`}
+                              type="button"
+                              onClick={() => handleRemoveTempArticle(idx)}
+                              className="p-1 hover:bg-red-500/10 text-red-400 rounded"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
-                        <span className="text-[#eedfa7] font-bold text-sm whitespace-nowrap">{fmtEur(art.totalPrice)} €</span>
-                        {isArticleEditable(art) ? (
-                          <button
-                            id={`btn-edit-tempart-${idx}`}
-                            type="button"
-                            onClick={() => handleEditTempArticle(idx)}
-                            title="Modifier cette ligne"
-                            className="p-1 hover:bg-amber-500/10 text-amber-400 rounded"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        ) : (art as any).id && (
-                          <span className="p-1 text-gray-700" title="Déjà trié en lot (ou pierre non disponible) : poids et prix ne sont plus modifiables">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </span>
-                        )}
-                        <button
-                          id={`btn-remove-tempart-${idx}`}
-                          type="button"
-                          onClick={() => handleRemoveTempArticle(idx)}
-                          className="p-1 hover:bg-red-500/10 text-red-400 rounded"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
                       </div>
                     </div>
                   ))}
