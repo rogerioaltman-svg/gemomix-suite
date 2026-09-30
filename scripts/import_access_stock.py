@@ -18,7 +18,12 @@ Règles de conversion (stock Access = table LOT) :
 Usage :
   python scripts/import_access_stock.py export [--mdb C:\\Access\\Data\\Data.mdb] [--include-classes]
   python scripts/import_access_stock.py csv    [--mdb ...]   (liste d'analyse pour Excel)
-  python scripts/import_access_stock.py load   [--url http://localhost:3000] [--dry-run]
+  python scripts/import_access_stock.py load   [--url http://localhost:3000] [--dry-run] [--decisions Stock_a_valider.xlsx]
+
+Avec --decisions, la colonne « Décision » du tableau renvoyé pilote le chargement : « Importer tel quel »,
+« Corriger puis importer » (les valeurs modifiées dans le tableau sont reprises), « Ne pas importer », « À revoir ensemble »
+(ignorée). Une ligne signalée (anomalie, prix de vente < achat) SANS décision n'est pas importée ; une ligne non signalée
+sans décision est importée telle quelle. Refaire « export » juste avant, puis « load --dry-run --decisions ... » d'abord.
 """
 import argparse, collections, datetime, json, os, re, shutil, sys, tempfile, unicodedata, urllib.request, urllib.error
 
@@ -108,6 +113,9 @@ def export(args):
             'inclusions': [],
             'provenance': 'Stock initial',
             'location': '' if (position or 'STOCK').strip().upper() == 'STOCK' else position.strip(),
+            # prix au carat exacts d'Access (servent à détecter une correction faite dans le tableau ; jamais envoyés)
+            '_pachCt': float(prixach or 0),
+            '_pvteCt': float(prixvente or 0),
         })
 
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -202,6 +210,135 @@ def csv_export(args):
     print('   à vérifier / anomalies : %d' % sum(1 for r in out_rows if ('A VERIFIER' in r[17] or 'ANOMALIE' in r[17])))
 
 
+def _num(x):
+    """Nombre lu dans une cellule Excel (float) ou un CSV français (« 1 200,50 »). None si vide."""
+    if x is None or x == '':
+        return None
+    if isinstance(x, (int, float)):
+        return float(x)
+    try:
+        return float(str(x).replace(' ', '').replace(' ', '').replace(',', '.'))
+    except ValueError:
+        return None
+
+
+def read_decisions(path):
+    """Lit le tableau renvoyé par Laurent (.xlsx, tous les onglets, ou .csv).
+    Retourne {référence: {decision, poids, pach, pvte, taille, signale}} ; la dernière décision non vide
+    d'une même référence l'emporte, un désaccord entre onglets est signalé dans 'conflits'."""
+    rows = []
+    if path.lower().endswith('.csv'):
+        import csv
+        with open(path, encoding='utf-8-sig', newline='') as f:
+            rows.append(list(csv.reader(f, delimiter=';')))
+    else:
+        try:
+            import openpyxl
+        except ImportError:
+            sys.exit("Lecture d'un .xlsx : installez openpyxl (py -3.11 -m pip install openpyxl) ou enregistrez le fichier en .csv (séparateur « ; »).")
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        for ws in wb.worksheets:
+            rows.append([list(r) for r in ws.iter_rows(values_only=True)])
+    out, conflits = {}, []
+    for sheet in rows:
+        if not sheet:
+            continue
+        head = [strip_accents(str(c or '')).lower().strip() for c in sheet[0]]
+
+        def col(prefix):
+            for i, h in enumerate(head):
+                if h.startswith(prefix):
+                    return i
+            return None
+        c_ref, c_dec = col('reference'), col('decision')
+        if c_ref is None or c_dec is None:
+            continue
+        c_poids, c_pach, c_pvte, c_taille = col('poids restant'), col('prix achat'), col('prix vente /ct'), col('taille')
+        c_obs, c_vla = col('observations'), col('prix vente <')
+        for r in sheet[1:]:
+            r = list(r) + [None] * (len(head) - len(r))
+            ref = str(r[c_ref] or '').strip()
+            if not ref:
+                continue
+            obs = str(r[c_obs] or '') if c_obs is not None else ''
+            signale = ('ANOMALIE' in obs or 'A VERIFIER' in obs
+                       or (c_vla is not None and str(r[c_vla] or '').strip().upper() == 'OUI'))
+            dec = strip_accents(str(r[c_dec] or '')).lower().strip()
+            item = {'decision': dec, 'signale': signale,
+                    'poids': _num(r[c_poids]) if c_poids is not None else None,
+                    'pach': _num(r[c_pach]) if c_pach is not None else None,
+                    'pvte': _num(r[c_pvte]) if c_pvte is not None else None,
+                    'taille': str(r[c_taille] or '').strip() if c_taille is not None else None}
+            prev = out.get(ref)
+            if prev and prev['decision'] and dec and prev['decision'] != dec:
+                conflits.append(ref)
+            if dec or not prev:
+                out[ref] = item
+            elif prev:
+                prev['signale'] = prev['signale'] or signale
+    return out, conflits
+
+
+def apply_decisions(gems, decisions, conflits):
+    """Filtre et corrige les pierres selon les décisions. Retourne (à importer, rapport)."""
+    a_importer, rapport = [], collections.defaultdict(list)
+    by_ref = {g['reference']: g for g in gems}
+    for ref in conflits:
+        rapport['Décisions contradictoires entre onglets (pierre ignorée)'].append(ref)
+    for g in gems:
+        ref = g['reference']
+        d = decisions.get(ref)
+        if ref in conflits:
+            continue
+        if d is None or d['decision'] == '':
+            if d is not None and d['signale']:
+                rapport['Cas signalé sans décision (pierre ignorée)'].append(ref)
+            else:
+                a_importer.append(g)
+            continue
+        dec = d['decision']
+        if dec.startswith('ne pas'):
+            rapport['Refusées (« Ne pas importer »)'].append(ref)
+        elif dec.startswith('a revoir'):
+            rapport['« À revoir ensemble » (pierre ignorée)'].append(ref)
+        elif dec.startswith('importer') or dec.startswith('corriger'):
+            g = dict(g)
+            w0 = g['weight'] or 0
+            cout_ct = g.get('_pachCt', (g['costPrice'] / w0) if w0 else 0)
+            vente_ct = g.get('_pvteCt', (g['sellingPrice'] / w0) if w0 else 0)
+            change = []
+            if d['poids'] is not None and abs(d['poids'] - w0) > 0.001:
+                change.append('poids %.2f -> %.2f' % (w0, d['poids']))
+            if d['pach'] is not None and abs(d['pach'] - cout_ct) > 0.0051:
+                change.append("prix d'achat/ct %.2f -> %.2f" % (cout_ct, d['pach']))
+            if d['pvte'] is not None and abs(d['pvte'] - vente_ct) > 0.0051:
+                change.append('prix de vente/ct %.2f -> %.2f' % (vente_ct, d['pvte']))
+            if d['taille'] is not None and d['taille'] != g['cut']:
+                change.append('taille « %s » -> « %s »' % (g['cut'], d['taille']))
+            if dec.startswith('importer') and change:
+                rapport['« Importer tel quel » mais valeurs modifiées (pierre ignorée : choisissez « Corriger puis importer »)'].append('%s (%s)' % (ref, '; '.join(change)))
+                continue
+            if dec.startswith('corriger'):
+                if not change:
+                    rapport['« Corriger » sans aucune valeur modifiée (importée telle quelle)'].append(ref)
+                else:
+                    w = d['poids'] if d['poids'] is not None else w0
+                    cp = d['pach'] if d['pach'] is not None else cout_ct
+                    vp = d['pvte'] if d['pvte'] is not None else vente_ct
+                    g.update({'weight': round(w, 2), 'costPrice': money(cp * w), 'sellingPrice': money(vp * w)})
+                    if d['taille'] is not None:
+                        g['cut'] = d['taille']
+                    g['description'] = g['description'] + ' [corrigé après validation : ' + '; '.join(change) + ']'
+                    rapport['Corrigées puis importées'].append('%s (%s)' % (ref, '; '.join(change)))
+            a_importer.append(g)
+        else:
+            rapport['Décision non reconnue (pierre ignorée)'].append('%s (« %s »)' % (ref, dec))
+    for ref, d in decisions.items():
+        if ref not in by_ref and (d['decision'].startswith('importer') or d['decision'].startswith('corriger')):
+            rapport["Décidées à l'import mais absentes de l'export (relancer « export --include-classes »)"].append(ref)
+    return a_importer, rapport
+
+
 def http(method, url, body=None):
     data = json.dumps(body).encode('utf-8') if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers={'Content-Type': 'application/json'})
@@ -213,6 +350,16 @@ def load(args):
     if not os.path.isfile(OUT_FILE):
         sys.exit("Aucun fichier d'export : lancez d'abord la commande « export ».")
     gems = json.load(open(OUT_FILE, encoding='utf-8'))['gemstones']
+    if args.decisions:
+        if not os.path.isfile(args.decisions):
+            sys.exit('Fichier de décisions introuvable : %s' % args.decisions)
+        decisions, conflits = read_decisions(args.decisions)
+        gems, rapport = apply_decisions(gems, decisions, conflits)
+        print('=== DÉCISIONS lues dans %s ===' % os.path.basename(args.decisions))
+        for titre, refs in rapport.items():
+            print('  %s : %d' % (titre, len(refs)))
+            for x in refs[:40]:
+                print('      - %s' % x)
     base = args.url.rstrip('/')
     existing = {g['id'] for g in http('GET', base + '/api/gemstones')}
     archived = {t['id'] for t in http('GET', base + '/api/trash') if t.get('type') == 'gemstone'}
@@ -225,7 +372,7 @@ def load(args):
     ok = ko = 0
     for g in todo:
         try:
-            http('POST', base + '/api/gemstones', g)
+            http('POST', base + '/api/gemstones', {k: v for k, v in g.items() if not k.startswith('_')})
             ok += 1
         except urllib.error.HTTPError as e:
             ko += 1
@@ -239,5 +386,6 @@ if __name__ == '__main__':
     e = sub.add_parser('export'); e.add_argument('--mdb', default=r'C:\Access\Data\Data.mdb'); e.add_argument('--include-classes', action='store_true')
     c = sub.add_parser('csv'); c.add_argument('--mdb', default=r'C:\Access\Data\Data.mdb')
     l = sub.add_parser('load'); l.add_argument('--url', default='http://localhost:3000'); l.add_argument('--dry-run', action='store_true')
+    l.add_argument('--decisions', help='tableau renvoyé (.xlsx ou .csv) : la colonne « Décision » filtre et corrige ce qui est importé')
     a = ap.parse_args()
     {'export': export, 'csv': csv_export, 'load': load}[a.cmd](a)
