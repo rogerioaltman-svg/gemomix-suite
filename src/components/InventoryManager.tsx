@@ -17,9 +17,11 @@ import {
   Compass,
   FileCheck,
   Award,
+  Printer,
   History, Plus, UserPlus } from 'lucide-react';
 import PhotoCapture from './PhotoCapture';
 import RecuttingSection from './RecuttingSection';
+import LabelSheet from './LabelSheet';
 import MovementHistory from './MovementHistory';
 
 const PROVENANCE_OPTIONS = ['Stock initial', "Transformation d'un lot", 'Autre'];
@@ -132,6 +134,7 @@ export default function InventoryManager({
   onUpdateGemInline,
   onGenerateCertificate
 }: InventoryManagerProps) {
+  const [showStoneLabel, setShowStoneLabel] = useState(false);
   const [id, setId] = useState('');
   const [reference, setReference] = useState('');
   const [referenceError, setReferenceError] = useState('');
@@ -409,6 +412,7 @@ export default function InventoryManager({
               : "Saisie manuelle : stock initial, transformation d'un lot ou autre provenance. Les acquisitions passent par Achats."}
           </p>
         </div>
+        {showStoneLabel && selectedGem && <LabelSheet stone={selectedGem} purchase={selectedGem.sourcePurchaseId ? purchases.find(p => p.id === selectedGem.sourcePurchaseId) : undefined} onClose={() => setShowStoneLabel(false)} />}
         {id && (
           <div className="flex items-center gap-2">
             {onGenerateCertificate && (
@@ -420,6 +424,17 @@ export default function InventoryManager({
               >
                 <Award className="h-3.5 w-3.5" />
                 <span>Imprimer la fiche</span>
+              </button>
+            )}
+            {selectedGem && (
+              <button
+                id="btn-fiche-label"
+                type="button"
+                onClick={() => setShowStoneLabel(true)}
+                className="px-3 py-1.5 text-xs bg-transparent hover:bg-gray-800 text-[#e0b760] border border-[#bda165]/30 rounded-lg flex items-center gap-1.5 transition-colors"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                <span>Étiquette</span>
               </button>
             )}
             {onDeleteGem && (
