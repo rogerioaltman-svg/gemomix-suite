@@ -25,6 +25,12 @@ interface LabelSheetProps {
   onClose: () => void;
 }
 
+// « Fact. » reste collé au numéro ; le numéro ne se coupe que s'il est trop long pour la largeur de l'étiquette
+function FactLine({ number }: { number?: string }) {
+  if (!number) return null;
+  return <div style={{ overflowWrap: 'anywhere' }}><span style={{ whiteSpace: 'nowrap' }}>Fact. </span>{number}</div>;
+}
+
 function Qr({ text, size }: { text: string; size: number }) {
   const [src, setSrc] = useState('');
   useEffect(() => {
@@ -90,7 +96,8 @@ export default function LabelSheet({ purchase, articles = [], lots = [], stone, 
                 <div>{stone.type}{stone.cut ? ` · ${stone.cut}` : ''}</div>
                 <div><b>{stone.weight.toFixed(2)} ct</b>{[stone.color, stone.clarity].filter(Boolean).length ? ` · ${[stone.color, stone.clarity].filter(Boolean).join(' ')}` : ''}</div>
                 {stone.certificate?.authority && stone.certificate.authority !== 'Aucun' && stone.certificate.authority !== 'Sans' && <div>{stone.certificate.authority} {stone.certificate.number}</div>}
-                {purchase && <div>Achat {purchase.reference}{purchase.supplierReference ? ` · Fact. ${purchase.supplierReference}` : ''}</div>}
+                {purchase && <div>Achat {purchase.reference}</div>}
+                {purchase && <FactLine number={purchase.supplierReference} />}
               </div>
             </div>
           )}
@@ -100,7 +107,7 @@ export default function LabelSheet({ purchase, articles = [], lots = [], stone, 
               <div style={{ fontSize: '2.6mm', lineHeight: 1.25, minWidth: 0 }}>
                 <div style={{ fontSize: '4mm', fontWeight: 700 }}>{parentRef}</div>
                 <div>Achat {purchase.reference}{group ? ` · Groupe ${group}` : ''}</div>
-                {purchase.supplierReference && <div>Fact. {purchase.supplierReference}</div>}
+                <FactLine number={purchase.supplierReference} />
                 <div><b>{totalWeight.toFixed(2)} ct</b>{totalQty ? ` · ${totalQty} pcs` : ''}</div>
                 <div>{eur(totalPrice)} €</div>
               </div>
@@ -113,7 +120,8 @@ export default function LabelSheet({ purchase, articles = [], lots = [], stone, 
                 <div style={{ fontSize: '4mm', fontWeight: 700 }}>{l.reference}</div>
                 <div><b>{l.weight.toFixed(2)} ct</b>{l.quantity ? ` · ${l.quantity} pcs` : ''}</div>
                 <div>Chemise : {parentRef}</div>
-                {purchase && <div>Achat {purchase.reference}{purchase.supplierReference ? ` · Fact. ${purchase.supplierReference}` : ''}</div>}
+                {purchase && <div>Achat {purchase.reference}</div>}
+                {purchase && <FactLine number={purchase.supplierReference} />}
               </div>
             </div>
           ))}
