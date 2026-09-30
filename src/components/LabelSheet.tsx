@@ -100,6 +100,7 @@ export default function LabelSheet({ purchase, articles = [], lots = [], stone, 
               <div style={{ fontSize: '2.6mm', lineHeight: 1.25, minWidth: 0 }}>
                 <div style={{ fontSize: '4mm', fontWeight: 700 }}>{parentRef}</div>
                 <div>Achat {purchase.reference}{group ? ` · Groupe ${group}` : ''}</div>
+                {purchase.supplierReference && <div>Fact. {purchase.supplierReference}</div>}
                 <div><b>{totalWeight.toFixed(2)} ct</b>{totalQty ? ` · ${totalQty} pcs` : ''}</div>
                 <div>{eur(totalPrice)} €</div>
               </div>
@@ -112,6 +113,7 @@ export default function LabelSheet({ purchase, articles = [], lots = [], stone, 
                 <div style={{ fontSize: '4mm', fontWeight: 700 }}>{l.reference}</div>
                 <div><b>{l.weight.toFixed(2)} ct</b>{l.quantity ? ` · ${l.quantity} pcs` : ''}</div>
                 <div>Chemise : {parentRef}</div>
+                {purchase && <div>Achat {purchase.reference}{purchase.supplierReference ? ` · Fact. ${purchase.supplierReference}` : ''}</div>}
               </div>
             </div>
           ))}
