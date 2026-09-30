@@ -158,7 +158,7 @@ def csv_export(args):
     header = ['Statut Access', 'Référence', 'Catégorie Access', 'Variété GemoMix', 'Précision', 'Taille',
               'Poids origine (ct)', 'Poids restant (ct)', 'Prix achat /ct (EUR)', 'Prix vente /ct (EUR)',
               'Coût restant (EUR)', 'Valeur vente restante (EUR)', 'Fournisseur', 'N° achat interne',
-              'Date achat', 'Date classement', 'Position', 'Observations', 'Décision (à remplir)']
+              'Date achat', 'Date classement', 'Position', 'Observations', 'Prix vente < prix achat', 'Décision (à remplir)']
     out_rows, counts = [], collections.Counter()
     for (flag, ref, gros, taille, pinit, poids, pach, pvte, fourn, nopiece, datach, dclass, position) in cur.fetchall():
         vtype, vcol = normalize_variety(gros)
@@ -177,6 +177,8 @@ def csv_export(args):
                 obs.append('Sans prix de vente')
             if not (taille or '').strip():
                 obs.append('Sans taille')
+            if pvte and pach and pvte < pach:
+                obs.append("Prix de vente inférieur au prix d'achat")
         if pinit is not None and poids > pinit + 0.005:
             obs.append("ANOMALIE : poids restant > poids d'origine")
         status = 'Actif (non classé)' if flag == 'N' else 'Classé avec poids'
@@ -184,7 +186,8 @@ def csv_export(args):
         out_rows.append([status, (ref or '').strip(), (gros or '').strip(), vtype, vcol, (taille or '').strip(),
                          fr(pinit), fr(poids), fr(pach), fr(pvte), fr((pach or 0) * poids), fr((pvte or 0) * poids),
                          (fourn or '').strip(), str(nopiece or '').strip(), d(datach), d(dclass),
-                         (position or '').strip(), ' ; '.join(obs), ''])
+                         (position or '').strip(), ' ; '.join(obs),
+                         'OUI' if (pvte and pach and pvte < pach) else '', ''])
     # les cas à vérifier en premier, puis le reste
     out_rows.sort(key=lambda r: (0 if ('A VERIFIER' in r[17] or 'ANOMALIE' in r[17]) else 1, r[0], r[1]))
     os.makedirs(OUT_DIR, exist_ok=True)
